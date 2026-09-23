@@ -1,0 +1,2 @@
+[console_scripts]
+omnissa-archive = omnissa_archive.cli:main
