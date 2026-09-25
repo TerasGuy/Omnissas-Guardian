@@ -12,6 +12,12 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from bs4 import BeautifulSoup, NavigableString
 
 from omnissa_archive.db import connect, init_db
+from omnissa_archive.library import (
+    LibraryWatcher,
+    assets_root_for,
+    install_uploaded_database,
+    resolve_default_database,
+)
 from omnissa_archive.urls import canonical_queue_url, resolve_link
 
 TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
@@ -76,24 +82,37 @@ nav.side { width: 230px; flex: none; background: var(--ink); padding: 28px 16px;
 nav.side a { display: block; color: #bebec6; text-decoration: none; padding: 12px 14px; border-radius: 12px; margin-bottom: 6px; }
 nav.side a.active, nav.side a:hover { background: var(--teal); color: white; }
 .content { flex: 1; min-width: 0; }
-.filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 8px 0 18px; }
-.filters label { display: flex; flex-direction: column; gap: 4px; color: var(--teal); font-size: 13px; font-weight: 700; }
-.filters select, .filters input[type=date] { min-width: 140px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font: inherit; }
+.filters { background: white; border: 1px solid var(--line); border-radius: 22px; padding: 16px 18px; margin: 0 0 16px; box-shadow: 0 14px 36px rgba(44,44,62,.05); }
+.filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 14px; align-items: end; }
+.filters label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.filters label span { color: var(--teal); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.filters select, .filters input[type=date] { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid transparent; border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; }
+.filters select:focus, .filters input[type=date]:focus { outline: 2px solid var(--coral); background: white; }
+.filter-actions { display: flex; gap: 8px; align-items: center; }
 .filters button { padding: 10px 18px; }
-.filters a.clear { align-self: center; color: var(--teal); font-weight: 700; }
-.catalog { list-style: none; margin: 0; padding: 0; }
-.catalog li { background: white; border: 1px solid var(--line); border-radius: 14px; margin: 8px 0; }
-.catalog a { display: block; padding: 14px 16px; color: var(--ink); text-decoration: none; font-weight: 600; }
-.catalog a:hover { color: var(--coral); }
-.guide { color: var(--teal); font-weight: 500; font-size: 13px; }
+.filters a.clear { color: var(--teal); font-weight: 700; text-decoration: none; padding: 10px 8px; }
+.table-wrap { overflow-x: auto; background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 14px 36px rgba(44,44,62,.05); }
+.archive { width: 100%; border-collapse: collapse; }
+.archive th { text-align: right; font-size: 12px; letter-spacing: .04em; color: var(--teal); background: #f7f7f9; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.archive td { padding: 14px 16px; border-bottom: 1px solid #ececef; vertical-align: top; }
+.archive tr:last-child td { border-bottom: 0; }
+.archive tbody tr:hover td { background: #fff8f6; }
+.archive .when { width: 7.2rem; white-space: nowrap; color: var(--teal); font-variant-numeric: tabular-nums; }
+.archive .topic a { color: var(--ink); font-weight: 650; text-decoration: none; line-height: 1.4; }
+.archive .topic a:hover { color: var(--coral); }
+.archive .kind { color: var(--teal); font-size: 13px; line-height: 1.45; }
 .pager { display: flex; gap: 16px; justify-content: center; align-items: center; }
 .pager a { color: var(--teal); font-weight: 700; }
 .settings { max-width: 640px; margin: 24px auto; background: white; border: 1px solid var(--line); border-radius: 24px; padding: 28px; }
 .settings input[type=file] { display: block; margin: 16px 0; }
+.status-strip { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 8px auto 0; }
+.status-strip .pill { display: inline-flex; gap: 8px; align-items: center; padding: 7px 12px; border-radius: 999px; background: white; border: 1px solid var(--line); color: var(--teal); font-size: 12px; font-weight: 700; }
+.status-strip .dot { width: 8px; height: 8px; border-radius: 50%; background: #3d9a78; }
 @media (max-width: 860px) {
   .board { grid-template-columns: minmax(0, 420px); }
   .shell { flex-direction: column; }
   nav.side { width: auto; display: flex; gap: 8px; overflow: auto; }
+  .filter-grid { grid-template-columns: 1fr 1fr; }
 }
 """
 
@@ -120,14 +139,22 @@ def _facet_tokens(rows, column: str) -> list[str]:
     return sorted(found, key=str.lower)
 
 
-def _facet_line(row, include_source: bool = True) -> str:
+def _category_line(row) -> str:
     parts: list[str] = []
-    if include_source:
-        parts.append(_source_label(row["source"]))
     for key in ("product_family", "product", "version", "category"):
         value = row[key] or ""
         if value:
             parts.append(value.replace(",", ", "))
+    return " · ".join(parts)
+
+
+def _facet_line(row, include_source: bool = True) -> str:
+    parts: list[str] = []
+    if include_source:
+        parts.append(_source_label(row["source"]))
+    category = _category_line(row)
+    if category:
+        parts.append(category)
     if row["published_at"]:
         parts.append(row["published_at"])
     return " · ".join(parts)
@@ -141,7 +168,7 @@ def _select(name: str, label: str, values: list[str], selected: str) -> str:
     for value in pool:
         mark = " selected" if value == selected else ""
         options.append(f'<option value="{html.escape(value)}"{mark}>{html.escape(value)}</option>')
-    return f'<label>{html.escape(label)}<select name="{name}">{"".join(options)}</select></label>'
+    return f'<label><span>{html.escape(label)}</span><select name="{name}">{"".join(options)}</select></label>'
 
 
 def _request_filters(query: dict) -> dict[str, str]:
@@ -267,11 +294,12 @@ def search_documents(conn, raw_query: str, limit: int = 40):
         return []
 
 
-def _layout(title: str, body: str, query: str = "", active: str = "") -> bytes:
+def _layout(title: str, body: str, query: str = "", active: str = "", status: str = "") -> bytes:
     def item(key: str, href: str, label: str) -> str:
         klass = "active" if key == active else ""
         return f'<a class="{klass}" href="{href}">{label}</a>'
 
+    status_html = f'<div class="status-strip">{status}</div>' if status else ""
     page = f"""<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -291,10 +319,11 @@ def _layout(title: str, body: str, query: str = "", active: str = "") -> bytes:
 <div class="content">
 <header>
   <a href="/"><strong>ארכיון Omnissa</strong></a>
-  <form action="/search" method="get">
+  <form class="header" action="/search" method="get">
     <input type="search" name="q" value="{html.escape(query)}" placeholder="חיפוש: error, תקלה, Horizon, מספר מאמר">
     <button type="submit">חיפוש</button>
   </form>
+  {status_html}
 </header>
 <main>{body}</main>
 </div>
@@ -328,9 +357,13 @@ def _cube(title: str, downloaded: int, discovered: int, rows: list[dict], kind: 
 class ArchiveReader:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
-        conn = connect(data_dir / "archive.sqlite")
+        self.watcher = LibraryWatcher(data_dir)
+        default_db = resolve_default_database(data_dir)
+        default_db.parent.mkdir(parents=True, exist_ok=True)
+        conn = connect(default_db)
         init_db(conn)
         conn.close()
+        self.watcher.bind(self.database_path())
 
     def _config_path(self) -> Path:
         return self.data_dir / "reader_config.json"
@@ -344,7 +377,33 @@ class ArchiveReader:
                 chosen = None
             if chosen is not None and chosen.is_file():
                 return chosen
-        return self.data_dir / "archive.sqlite"
+        return resolve_default_database(self.data_dir)
+
+    def assets_root(self) -> Path:
+        return assets_root_for(self.database_path(), self.data_dir)
+
+    def refresh_library(self) -> str:
+        event = self.watcher.poll(self.database_path())
+        if event is None:
+            return ""
+        if event.path.resolve() != self.database_path().resolve():
+            self._write_database_path(event.path)
+        return event.notice
+
+    def status_pills(self) -> str:
+        self.refresh_library()
+        current = self.database_path()
+        pills = [
+            f'<span class="pill"><span class="dot"></span>מסד פעיל: {html.escape(current.name)}</span>'
+        ]
+        if self.watcher.last_reload_at:
+            pills.append(
+                f'<span class="pill"><span class="dot"></span>Live reload · {html.escape(self.watcher.last_reload_notice or "עודכן")}</span>'
+            )
+        return "".join(pills)
+
+    def _page(self, title: str, body: str, query: str = "", active: str = "") -> bytes:
+        return _layout(title, body, query, active, status=self.status_pills())
 
     def _write_database_path(self, path: Path) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -352,8 +411,10 @@ class ArchiveReader:
             json.dumps({"database": str(path)}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        self.watcher.bind(path)
 
     def _conn(self) -> sqlite3.Connection:
+        self.refresh_library()
         conn = connect(self.database_path())
         init_db(conn)
         return conn
@@ -398,7 +459,7 @@ class ArchiveReader:
             + _cube("מסמכי תיעוד", counts.get("docs", 0), found.get("docs", 0), latest_docs, "docs")
             + "</section>"
         )
-        return _layout("ארכיון Omnissa", body, active="home")
+        return self._page("ארכיון Omnissa", body, active="home")
 
     def search_page(self, raw_query: str) -> bytes:
         terms = TOKEN_RE.findall(raw_query or "")
@@ -422,7 +483,7 @@ class ArchiveReader:
                     "</div>"
                 )
             body = f"<p>{len(rows)} תוצאות עבור <strong>{html.escape(raw_query)}</strong></p>" + "".join(cards)
-        return _layout(f"חיפוש: {raw_query}", body, raw_query, active="search")
+        return self._page(f"חיפוש: {raw_query}", body, raw_query, active="search")
 
     def read_page(self, document_id: int, raw_query: str) -> bytes | None:
         conn = self._conn()
@@ -443,7 +504,7 @@ class ArchiveReader:
             f'<p class="meta">{html.escape(facts)} · {html.escape(page_url)}</p>'
             f'<article dir="auto">{article}</article>'
         )
-        return _layout(title or "מסמך", body, raw_query, active=source)
+        return self._page(title or "מסמך", body, raw_query, active=source)
 
     def catalog_page(self, source: str, filters: dict[str, str], page: int) -> bytes:
         page = max(1, page)
@@ -502,53 +563,66 @@ class ArchiveReader:
             "version": _facet_tokens(facet_rows, "version"),
             "category": _facet_tokens(facet_rows, "category"),
         }
-        items = []
+        body_rows = []
         for row in rows:
-            facts = _facet_line(row, include_source=False)
-            detail = f' <span class="guide">{html.escape(facts)}</span>' if facts else ""
-            items.append(
-                f'<li><a href="/read/{row["id"]}">{html.escape(row["title"] or "ללא כותרת")}{detail}</a></li>'
+            published = html.escape(row["published_at"]) if row["published_at"] else "—"
+            category = html.escape(_category_line(row)) or "—"
+            body_rows.append(
+                "<tr>"
+                f'<td class="when">{published}</td>'
+                f'<td class="topic"><a dir="auto" href="/read/{row["id"]}">{html.escape(row["title"] or "ללא כותרת")}</a></td>'
+                f'<td class="kind">{category}</td>'
+                "</tr>"
             )
-        rendered_items = "".join(items)
         start = 0 if total == 0 else (page - 1) * 40 + 1
         end = (page - 1) * 40 + len(rows)
         pages = max(1, (total + 39) // 40)
         prev_link = f'<a href="{base}{_filter_query(chosen, page - 1)}">הקודם</a>' if page > 1 else ""
         next_link = f'<a href="{base}{_filter_query(chosen, page + 1)}">הבא</a>' if page < pages else ""
         listing = (
-            f'<ul class="catalog">{rendered_items}</ul>'
-            if rendered_items
+            '<div class="table-wrap"><table class="archive" dir="rtl">'
+            "<thead><tr><th>תאריך</th><th>נושא</th><th>קטגוריה</th></tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+            if body_rows
             else '<p class="empty">אין פריטים שתואמים לסינון.</p>'
         )
         body = (
             f"<h2>{title}</h2>"
-            f'<form class="filters" action="{base}" method="get">'
+            f'<form class="filters" action="{base}" method="get" dir="rtl">'
+            f'<div class="filter-grid">'
             f"{_select('family', 'משפחת מוצר', options['family'], chosen['family'])}"
             f"{_select('product', 'מוצר', options['product'], chosen['product'])}"
             f"{_select('version', 'גרסה', options['version'], chosen['version'])}"
             f"{_select('category', 'קטגוריה', options['category'], chosen['category'])}"
-            f'<label>מתאריך<input type="date" name="from" value="{html.escape(chosen["from"])}"></label>'
-            f'<label>עד תאריך<input type="date" name="to" value="{html.escape(chosen["to"])}"></label>'
-            f'<button type="submit">סינון</button>'
-            f'<a class="clear" href="{base}">ניקוי</a>'
-            f"</form>"
+            f'<label><span>מתאריך</span><input type="date" name="from" value="{html.escape(chosen["from"])}"></label>'
+            f'<label><span>עד תאריך</span><input type="date" name="to" value="{html.escape(chosen["to"])}"></label>'
+            f'<div class="filter-actions"><button type="submit">סינון</button>'
+            f'<a class="clear" href="{base}">ניקוי</a></div>'
+            f"</div></form>"
             f'<p class="meta">מציג {start}–{end} מתוך {total:,}</p>'
             f"{listing}"
             f'<p class="pager">{prev_link}<span>עמוד {page} מתוך {pages}</span>{next_link}</p>'
         )
-        return _layout(title, body, active=source)
+        return self._page(title, body, active=source)
 
     def settings_page(self, notice: str = "") -> bytes:
         current = self.database_path()
         note = f'<p class="card">{html.escape(notice)}</p>' if notice else ""
+        reload_note = ""
+        if self.watcher.last_reload_at:
+            reload_note = (
+                f'<p class="meta">Live reload אחרון: {html.escape(self.watcher.last_reload_at)} · '
+                f"{html.escape(self.watcher.last_reload_notice)}</p>"
+            )
         body = (
             '<section class="settings">'
             "<h2>הגדרות</h2>"
             f"{note}"
+            f"{reload_note}"
             f'<p>המסד שהקורא פותח עכשיו:</p><p class="meta">{html.escape(str(current))}</p>'
-            "<p>אחת לחודש אפשר לטעון כאן קובץ SQLite חדש ולתת אותו ללקוחות. "
-            "ההורדה השוטפת ממשיכה להיכתב אל <span class=\"meta\">data/archive.sqlite</span>, "
-            "ותיקיית התמונות נשארת <span class=\"meta\">data/assets</span>.</p>"
+            "<p>חבילת לקוח: שימו <span class=\"meta\">library/archive.sqlite</span> ו־"
+            "<span class=\"meta\">assets/</span>. עדכון חודשי אפשר לשים ב־"
+            "<span class=\"meta\">library/inbox/</span> — ייטען אוטומטית בלי ריסטארט.</p>"
             '<form method="post" action="/settings" enctype="multipart/form-data">'
             '<input type="file" name="database" accept=".sqlite,.db" required>'
             '<button type="submit">טעינת מסד</button></form>'
@@ -557,29 +631,13 @@ class ArchiveReader:
             '<button type="submit">חזרה למסד ההורדה</button></form>'
             "</section>"
         )
-        return _layout("הגדרות", body, active="settings")
+        return self._page("הגדרות", body, active="settings")
 
     def install_database(self, filename: str, payload: bytes) -> str:
-        if not payload.startswith(b"SQLite format 3\x00"):
-            raise ValueError("הקובץ אינו מסד SQLite")
-        libraries = self.data_dir / "libraries"
-        libraries.mkdir(parents=True, exist_ok=True)
-        stem = Path(filename or "archive.sqlite").name
-        stem = re.sub(r"[^A-Za-z0-9._-]", "_", stem) or "archive.sqlite"
-        if not stem.lower().endswith((".sqlite", ".db")):
-            stem += ".sqlite"
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        target = libraries / f"{stamp}-{stem}"
-        target.write_bytes(payload)
-        conn = sqlite3.connect(target)
-        try:
-            conn.execute("SELECT COUNT(*) FROM documents").fetchone()
-        except sqlite3.Error as exc:
-            conn.close()
-            target.unlink(missing_ok=True)
-            raise ValueError("במסד אין טבלת documents") from exc
-        conn.close()
+        target = install_uploaded_database(self.data_dir, filename, payload)
         self._write_database_path(target)
+        self.watcher.last_reload_notice = f"המסד נטען: {target.name}"
+        self.watcher.last_reload_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         return str(target)
 
     def use_download_database(self) -> None:
@@ -591,14 +649,14 @@ class ArchiveReader:
             f"<p class='meta'>{html.escape(url)}</p>"
             "<p>אחרי שפקודת ההורדה תביא אותו, הקישור ייפתח כאן.</p></div>"
         )
-        return _layout("עדיין לא בארכיון", body, active="")
+        return self._page("עדיין לא בארכיון", body, active="")
 
     def asset(self, name: str) -> tuple[bytes, str] | None:
         safe_name = Path(name).name
         if not safe_name or safe_name != name:
             return None
-        path = (self.data_dir / "assets" / safe_name).resolve()
-        root = (self.data_dir / "assets").resolve()
+        root = self.assets_root().resolve()
+        path = (root / safe_name).resolve()
         if path.parent != root or not path.is_file():
             return None
         content_type = ASSET_TYPES.get(path.suffix.lower(), "application/octet-stream")

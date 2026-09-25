@@ -3,9 +3,40 @@ from pathlib import Path
 import httpx
 
 from omnissa_archive.assets import RateLimiter, download_assets
-from omnissa_archive.db import enqueue, mark_done, replace_links, upsert_asset, upsert_document
+from omnissa_archive.db import (
+    content_hash,
+    enqueue,
+    get_document,
+    mark_done,
+    record_revision,
+    replace_links,
+    upsert_asset,
+    upsert_document,
+)
 from omnissa_archive.extract import Extracted, apply_local_paths
 from omnissa_archive.urls import canonical_queue_url, guide_of, locale_of, queue_source
+
+
+def page_is_current(existing, extracted: Extracted) -> bool:
+    if existing is None:
+        return False
+    remote = (extracted.updated_at or "").strip()
+    local = (existing["updated_at"] or "").strip()
+    if remote and local:
+        return remote == local
+    return existing["content_hash"] == content_hash(extracted.title, extracted.text)
+
+
+def keep_current(conn, url: str, http_status: int) -> None:
+    from omnissa_archive.db import utcnow
+
+    conn.execute(
+        "UPDATE documents SET fetched_at = ?, http_status = ? WHERE url = ?",
+        (utcnow(), http_status, url),
+    )
+    record_revision(conn, url)
+    mark_done(conn, url)
+    conn.commit()
 
 
 def save_page(
@@ -67,5 +98,6 @@ def save_page(
             discovered.append((queued, link_source))
     enqueue(conn, discovered)
     mark_done(conn, url)
+    record_revision(conn, url)
     conn.commit()
     return changed

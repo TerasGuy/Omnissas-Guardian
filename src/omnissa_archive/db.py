@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS documents (
     category TEXT NOT NULL DEFAULT '',
     published_at TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT '',
-    facets_at TEXT NOT NULL DEFAULT ''
+    facets_at TEXT NOT NULL DEFAULT '',
+    sitemap_lastmod TEXT NOT NULL DEFAULT ''
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -71,7 +72,8 @@ CREATE TABLE IF NOT EXISTS crawl_queue (
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    remote_lastmod TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -111,6 +113,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     for name in FACET_COLUMNS:
         if name not in have:
             conn.execute(f"ALTER TABLE documents ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+    if "sitemap_lastmod" not in have:
+        conn.execute("ALTER TABLE documents ADD COLUMN sitemap_lastmod TEXT NOT NULL DEFAULT ''")
+    queue_columns = {row["name"] for row in conn.execute("PRAGMA table_info(crawl_queue)")}
+    if "remote_lastmod" not in queue_columns:
+        conn.execute("ALTER TABLE crawl_queue ADD COLUMN remote_lastmod TEXT NOT NULL DEFAULT ''")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS documents_source_published ON documents(source, published_at)"
     )
@@ -136,7 +143,35 @@ def enqueue(conn: sqlite3.Connection, items: list[tuple[str, str]]) -> int:
     return after - before
 
 
+def reclaim_interrupted(conn: sqlite3.Connection) -> int:
+    """Pages left as 'running' after a crash become pending again."""
+    cur = conn.execute(
+        """
+        UPDATE crawl_queue
+        SET status = 'pending', updated_at = ?
+        WHERE status = 'running'
+        """,
+        (utcnow(),),
+    )
+    conn.commit()
+    return int(cur.rowcount or 0)
+
+
+def mark_running(conn: sqlite3.Connection, url: str) -> None:
+    """Commit immediately so a kill mid-download is visible on the next start."""
+    conn.execute(
+        """
+        UPDATE crawl_queue
+        SET status = 'running', last_error = NULL, updated_at = ?
+        WHERE url = ?
+        """,
+        (utcnow(), url),
+    )
+    conn.commit()
+
+
 def pending_urls(conn: sqlite3.Connection, source: str, limit: int = 0) -> list[str]:
+    reclaim_interrupted(conn)
     sql = """
         SELECT url FROM crawl_queue
         WHERE source = ? AND status IN ('pending', 'error') AND attempts < 3
@@ -149,6 +184,19 @@ def pending_urls(conn: sqlite3.Connection, source: str, limit: int = 0) -> list[
     return urls
 
 
+def queue_counts(conn: sqlite3.Connection, source: str | None = None) -> dict[str, int]:
+    if source:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM crawl_queue WHERE source = ? GROUP BY status",
+            (source,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM crawl_queue GROUP BY status"
+        ).fetchall()
+    return {row["status"]: row["n"] for row in rows}
+
+
 def mark_done(conn: sqlite3.Connection, url: str) -> None:
     conn.execute(
         """
@@ -158,6 +206,56 @@ def mark_done(conn: sqlite3.Connection, url: str) -> None:
         """,
         (utcnow(), url),
     )
+
+
+def record_revision(conn: sqlite3.Connection, url: str) -> None:
+    row = conn.execute("SELECT remote_lastmod FROM crawl_queue WHERE url = ?", (url,)).fetchone()
+    remote = row["remote_lastmod"] if row and row["remote_lastmod"] else ""
+    if remote:
+        conn.execute("UPDATE documents SET sitemap_lastmod = ? WHERE url = ?", (remote, url))
+
+
+def apply_remote_revisions(conn: sqlite3.Connection, revisions: dict[str, str]) -> dict[str, int]:
+    """Remember sitemap dates. Requeue a stored page only when its date changes."""
+    dated = [(lastmod, url) for url, lastmod in revisions.items() if lastmod]
+    for offset in range(0, len(dated), 400):
+        conn.executemany(
+            "UPDATE crawl_queue SET remote_lastmod = ? WHERE url = ?",
+            dated[offset : offset + 400],
+        )
+    stamped = 0
+    changed = 0
+    now = utcnow()
+    rows = conn.execute("SELECT url, source, sitemap_lastmod FROM documents").fetchall()
+    for row in rows:
+        remote = revisions.get(row["url"], "")
+        if not remote:
+            continue
+        if not row["sitemap_lastmod"]:
+            conn.execute(
+                "UPDATE documents SET sitemap_lastmod = ? WHERE url = ?",
+                (remote, row["url"]),
+            )
+            stamped += 1
+            continue
+        if row["sitemap_lastmod"] == remote:
+            continue
+        changed += 1
+        conn.execute(
+            """
+            INSERT INTO crawl_queue (url, source, status, attempts, updated_at, remote_lastmod)
+            VALUES (?, ?, 'pending', 0, ?, ?)
+            ON CONFLICT(url) DO UPDATE SET
+                status = 'pending',
+                attempts = 0,
+                last_error = NULL,
+                updated_at = excluded.updated_at,
+                remote_lastmod = excluded.remote_lastmod
+            """,
+            (row["url"], row["source"], now, remote),
+        )
+    conn.commit()
+    return {"stamped": stamped, "changed": changed}
 
 
 def mark_error(conn: sqlite3.Connection, url: str, error: str) -> None:

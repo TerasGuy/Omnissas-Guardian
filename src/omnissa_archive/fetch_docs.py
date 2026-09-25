@@ -4,9 +4,9 @@ import httpx
 
 from omnissa_archive.assets import RateLimiter
 from omnissa_archive.config import DOCS_RPS, HEADERS
-from omnissa_archive.db import enqueue, mark_error
+from omnissa_archive.db import enqueue, get_document, mark_error, mark_running
 from omnissa_archive.extract import extract_docs
-from omnissa_archive.store import save_page
+from omnissa_archive.store import keep_current, page_is_current, save_page
 
 
 def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
@@ -17,6 +17,7 @@ def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=45.0) as client:
         for index, url in enumerate(urls, start=1):
             enqueue(conn, [(url, "docs")])
+            mark_running(conn, url)
             try:
                 limiter.wait()
                 response = client.get(url)
@@ -35,6 +36,10 @@ def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
                 mark_error(conn, url, "missing doc-body")
                 conn.commit()
                 print(f"docs {index}/{len(urls)} no body {url}", flush=True)
+                continue
+            if page_is_current(get_document(conn, url), extracted):
+                keep_current(conn, url, response.status_code)
+                print(f"docs {index}/{len(urls)} unchanged {extracted.updated_at or extracted.title}", flush=True)
                 continue
             save_page(
                 conn,

@@ -13,9 +13,9 @@ from omnissa_archive.config import (
     MAX_ATTEMPTS,
     USER_AGENT,
 )
-from omnissa_archive.db import enqueue, mark_error
+from omnissa_archive.db import enqueue, get_document, mark_error, mark_running
 from omnissa_archive.extract import extract_kb
-from omnissa_archive.store import save_page
+from omnissa_archive.store import keep_current, page_is_current, save_page
 
 
 def kb_render_state(html: str) -> str:
@@ -90,12 +90,16 @@ def _render_chrome(url: str) -> str:
     return html
 
 
-def _store_kb_html(conn, data_dir: Path, client, limiter, url: str, html: str) -> bool:
+def _store_kb_html(conn, data_dir: Path, client, limiter, url: str, html: str) -> str:
     extracted = extract_kb(url, html)
     if extracted is None:
         mark_error(conn, url, "missing article body")
         conn.commit()
-        return False
+        return ""
+    if page_is_current(get_document(conn, url), extracted):
+        keep_current(conn, url, 200)
+        print(f"kb unchanged {extracted.updated_at or extracted.title}", flush=True)
+        return "unchanged"
     save_page(
         conn,
         data_dir,
@@ -107,7 +111,7 @@ def _store_kb_html(conn, data_dir: Path, client, limiter, url: str, html: str) -
         extracted=extracted,
     )
     print(f"kb {extracted.title}", flush=True)
-    return True
+    return "saved"
 
 
 def _fetch_with_playwright(conn, data_dir, client, limiter, urls: list[str]) -> int:
@@ -124,6 +128,7 @@ def _fetch_with_playwright(conn, data_dir, client, limiter, urls: list[str]) -> 
         try:
             for index, url in enumerate(urls, start=1):
                 enqueue(conn, [(url, "kb")])
+                mark_running(conn, url)
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=60000)
                     state, html = _wait_for_article(page)
@@ -139,10 +144,12 @@ def _fetch_with_playwright(conn, data_dir, client, limiter, urls: list[str]) -> 
                         mark_error(conn, url, "article body did not render")
                         conn.commit()
                         print(f"kb {index}/{len(urls)} no body {url}", flush=True)
-                    elif _store_kb_html(conn, data_dir, client, limiter, url, html):
-                        saved += 1
                     else:
-                        print(f"kb {index}/{len(urls)} no body {url}", flush=True)
+                        outcome = _store_kb_html(conn, data_dir, client, limiter, url, html)
+                        if outcome == "saved":
+                            saved += 1
+                        elif outcome != "unchanged":
+                            print(f"kb {index}/{len(urls)} no body {url}", flush=True)
                 time.sleep(KB_DELAY_SECONDS)
         finally:
             context.close()
@@ -154,6 +161,7 @@ def _fetch_with_chrome(conn, data_dir, client, limiter, urls: list[str]) -> int:
     saved = 0
     for index, url in enumerate(urls, start=1):
         enqueue(conn, [(url, "kb")])
+        mark_running(conn, url)
         try:
             html = _render_chrome(url)
         except Exception as exc:
@@ -165,10 +173,12 @@ def _fetch_with_chrome(conn, data_dir, client, limiter, urls: list[str]) -> int:
             if state == "missing":
                 _mark_missing(conn, url)
                 print(f"kb {index}/{len(urls)} unavailable {url}", flush=True)
-            elif _store_kb_html(conn, data_dir, client, limiter, url, html):
-                saved += 1
             else:
-                print(f"kb {index}/{len(urls)} no body {url}", flush=True)
+                outcome = _store_kb_html(conn, data_dir, client, limiter, url, html)
+                if outcome == "saved":
+                    saved += 1
+                elif outcome != "unchanged":
+                    print(f"kb {index}/{len(urls)} no body {url}", flush=True)
         time.sleep(KB_DELAY_SECONDS)
     return saved
 
