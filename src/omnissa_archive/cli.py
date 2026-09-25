@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     backfill_cmd = sub.add_parser("backfill")
     backfill_cmd.add_argument("--source", choices=("docs", "kb", "all"), default="all")
     guardian_cmd = sub.add_parser("guardian")
+    guardian_cmd.add_argument(
+        "--web",
+        action="store_true",
+        help="Legacy browser UI on --port (default is desktop window)",
+    )
     guardian_cmd.add_argument("--port", type=int, default=8766)
     guardian_cmd.add_argument("--no-browser", action="store_true")
     guardian_cmd.add_argument("--reader-url", default="http://127.0.0.1:8765")
@@ -109,14 +114,19 @@ def main(argv: list[str] | None = None) -> int:
         serve(data_dir, port=args.port, open_browser=not args.no_browser)
         return 0
     if args.command == "guardian":
-        from omnissa_archive.guardian import serve_guardian
+        if args.web:
+            from omnissa_archive.guardian import serve_guardian
 
-        serve_guardian(
-            data_dir,
-            port=args.port,
-            open_browser=not args.no_browser,
-            reader_base=args.reader_url,
-        )
+            serve_guardian(
+                data_dir,
+                port=args.port,
+                open_browser=not args.no_browser,
+                reader_base=args.reader_url,
+            )
+        else:
+            from omnissa_archive.guardian_desktop import run_desktop
+
+            run_desktop(data_dir, reader_base=args.reader_url)
         return 0
     if args.command == "package":
         from omnissa_archive.library import prepare_customer_package

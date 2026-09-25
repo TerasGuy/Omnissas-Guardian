@@ -66,9 +66,37 @@ DEFAULT_LOG_TARGETS = [
 ]
 
 ERROR_RE = re.compile(
-    r"\b(error|exception|failed|failure|fatal|critical|unable to|cannot )\b",
+    r"\b(error|exception|failed|failure|fatal|critical|unable to|cannot |warn(?:ing)?)\b",
     re.I,
 )
+LEVELS = ("FATAL", "ERROR", "WARNING", "DEBUG", "INFO")
+
+
+def classify_level(line: str) -> str:
+    text = line or ""
+    lowered = text.lower()
+    if re.search(r"\b(fatal|critical)\b", lowered):
+        return "FATAL"
+    if re.search(r"\b(error|exception|failed|failure|unable to|cannot )\b", lowered):
+        return "ERROR"
+    if re.search(r"\bwarn(?:ing)?\b", lowered):
+        return "WARNING"
+    if re.search(r"\bdebug\b", lowered):
+        return "DEBUG"
+    if re.search(r"\binfo\b", lowered):
+        return "INFO"
+    return "ERROR"
+
+
+def builtin_suggestion(level: str, line: str) -> str:
+    snippet = (line or "").strip()
+    if len(snippet) > 160:
+        snippet = snippet[:157] + "…"
+    if level == "FATAL":
+        return f"Critical failure detected. Review the component that wrote this line and related Horizon services. ({snippet})"
+    if level == "WARNING":
+        return f"Warning pattern in logs. Check configuration and recent changes around this message. ({snippet})"
+    return f"Error pattern in logs. Search the offline archive for matching KB articles and verify connectivity/auth. ({snippet})"
 PAGE_CSS = """
 :root { --ink:#2c2c3e; --coral:#f07a58; --teal:#365565; --teal-mid:#4d889d; --gold:#e8b545; --line:#bebec6; --paper:#f4f4f6; }
 * { box-sizing: border-box; }
@@ -110,18 +138,19 @@ def expand_path(raw: str) -> str:
 
 
 def path_status(raw: str) -> str:
+    """Machine status code: empty|pattern|ok|unc|missing."""
     expanded = expand_path(raw)
     if not expanded:
-        return "ריק"
+        return "empty"
     path = Path(expanded)
     if any(ch in expanded for ch in "*?"):
         parent = path.parent if path.parent != path else Path(".")
-        return "תבנית" if parent.exists() else "חסר"
+        return "pattern" if parent.exists() else "missing"
     if path.is_file() or path.is_dir():
-        return "נגיש"
+        return "ok"
     if expanded.startswith("\\\\"):
-        return "UNC"
-    return "חסר"
+        return "unc"
+    return "missing"
 
 
 def _utcnow() -> str:
@@ -135,16 +164,22 @@ class GuardianApp:
         self.config_path = data_dir / "guardian_config.json"
         self.state = self._load_config()
         self.alerts: list[dict] = []
+        self.history: list[dict] = []
+        self.system_log: list[dict] = []
         self.offsets: dict[str, int] = {}
         self.last_scan_at = ""
         self.last_scan_error = ""
         self.running = True
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._alert_seq = 0
         db = resolve_default_database(data_dir)
         conn = connect(db)
         init_db(conn)
         conn.close()
+        if self.state.get("reader_base"):
+            self.reader_base = str(self.state["reader_base"]).rstrip("/")
+        self._log_system("Guardian ready")
 
     def _load_config(self) -> dict:
         if self.config_path.is_file():
@@ -156,11 +191,15 @@ class GuardianApp:
             data = {}
         targets = data.get("targets") or DEFAULT_LOG_TARGETS
         extras = data.get("extra_paths") or []
+        lang = str(data.get("language") or "he")
         return {
             "interval_seconds": int(data.get("interval_seconds") or 60),
             "targets": targets,
             "extra_paths": extras,
-            "running": bool(data.get("running", True)),
+            # Desktop UX: start stopped until the operator clicks Start Monitoring.
+            "running": bool(data.get("running", False)),
+            "language": lang if lang in ("he", "en") else "he",
+            "reader_base": str(data.get("reader_base") or self.reader_base),
         }
 
     def save_config(self) -> None:
@@ -253,24 +292,141 @@ class GuardianApp:
             added += 1
         return added
 
+    def _log_system(self, message: str) -> None:
+        entry = {"at": _utcnow(), "message": message}
+        with self._lock:
+            self.system_log.insert(0, entry)
+            self.system_log = self.system_log[:200]
+
+    def language(self) -> str:
+        return "en" if self.state.get("language") == "en" else "he"
+
+    def set_language(self, lang: str) -> str:
+        self.state["language"] = "en" if str(lang).lower().startswith("en") else "he"
+        self.save_config()
+        self._log_system(f"Language set to {self.state['language']}")
+        return self.state["language"]
+
+    def set_monitoring(self, enabled: bool) -> None:
+        self.state["running"] = bool(enabled)
+        self.save_config()
+        self._log_system("Monitoring started" if enabled else "Monitoring stopped")
+
+    def clear_alerts(self) -> None:
+        with self._lock:
+            self.alerts.clear()
+        self._log_system("Live detections cleared")
+
+    def severity_counts(self) -> dict[str, int]:
+        counts = {level: 0 for level in LEVELS}
+        with self._lock:
+            for alert in self.alerts:
+                level = alert.get("level") or "ERROR"
+                if level in counts:
+                    counts[level] += 1
+        return counts
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            alerts = list(self.alerts)
+            history = list(self.history[:200])
+            system = list(self.system_log[:100])
+        targets = []
+        for target in self.state["targets"]:
+            raw = target.get("path") or ""
+            targets.append(
+                {
+                    "id": target.get("id"),
+                    "label": target.get("label") or "",
+                    "path": raw,
+                    "enabled": bool(target.get("enabled")),
+                    "status": path_status(raw),
+                }
+            )
+        extras = [
+            {"path": raw, "status": path_status(raw)}
+            for raw in (self.state.get("extra_paths") or [])
+            if raw
+        ]
+        return {
+            "language": self.language(),
+            "running": bool(self.state.get("running")),
+            "interval_seconds": int(self.state.get("interval_seconds") or 60),
+            "reader_base": self.reader_base,
+            "database": str(self.database_path()),
+            "last_scan_at": self.last_scan_at,
+            "last_scan_error": self.last_scan_error,
+            "counts": self.severity_counts(),
+            "alerts": alerts,
+            "history": history,
+            "system_log": system,
+            "targets": targets,
+            "extra_paths": extras,
+        }
+
+    def update_watch_dirs(
+        self,
+        *,
+        enabled_ids: list[str],
+        interval: int,
+        extra: str = "",
+        reader_base: str | None = None,
+    ) -> str:
+        self.state["interval_seconds"] = max(15, int(interval or 60))
+        enabled = set(enabled_ids or [])
+        for target in self.state["targets"]:
+            target["enabled"] = target.get("id") in enabled
+        extra = (extra or "").strip()
+        notice = "saved"
+        if extra and extra not in self.state["extra_paths"]:
+            self.state["extra_paths"].append(extra)
+            notice = "extra_added"
+        if reader_base is not None:
+            base = reader_base.strip().rstrip("/")
+            if base:
+                self.reader_base = base
+                self.state["reader_base"] = base
+        self.save_config()
+        self._log_system("Watch directories / settings updated")
+        return notice
+
+    def search_archive(self, query: str, limit: int = 8) -> list[dict]:
+        conn = self._conn()
+        try:
+            return suggest_solutions(conn, query, limit=limit, reader_base=self.reader_base)
+        finally:
+            conn.close()
+
     def _make_alert(self, label: str, path: Path, line: str) -> dict:
+        level = classify_level(line)
         conn = self._conn()
         try:
             suggestions = suggest_solutions(conn, line, reader_base=self.reader_base)
         finally:
             conn.close()
-        return {
+        self._alert_seq += 1
+        alert = {
+            "id": self._alert_seq,
             "at": _utcnow(),
+            "level": level,
             "label": label,
             "path": str(path),
+            "logfile": path.name,
             "line": line[:500],
+            "suggestion": builtin_suggestion(level, line),
             "suggestions": suggestions,
+            "kb": (suggestions[0]["title"] if suggestions else ""),
+            "kb_link": (suggestions[0]["reader_link"] if suggestions else ""),
         }
+        with self._lock:
+            self.history.insert(0, alert)
+            self.history = self.history[:500]
+        return alert
 
     def start_worker(self) -> None:
         def loop() -> None:
             while not self._stop.is_set():
-                if self.state.get("running", True):
+                if self.state.get("running", False):
                     self.scan_once()
                 wait = max(15, int(self.state.get("interval_seconds") or 60))
                 self._stop.wait(wait)
@@ -298,7 +454,7 @@ class GuardianApp:
                 f'<input type="checkbox" name="enable_{html.escape(target["id"])}" value="1"{checked}>'
                 f"<div><strong>{html.escape(target.get('label') or '')}</strong>"
                 f"<code>{html.escape(raw)}</code></div>"
-                f'<span class="pill"><span class="dot {"ok" if status == "נגיש" else "warn"}"></span>{html.escape(status)}</span>'
+                f'<span class="pill"><span class="dot {"ok" if status == "ok" else "warn"}"></span>{html.escape(status)}</span>'
                 "</div>"
             )
         for raw in self.state.get("extra_paths") or []:
@@ -307,7 +463,7 @@ class GuardianApp:
                 '<div class="path-row">'
                 '<input type="checkbox" checked disabled>'
                 f"<div><strong>נתיב נוסף / UNC</strong><code>{html.escape(raw)}</code></div>"
-                f'<span class="pill"><span class="dot {"ok" if status == "נגיש" else "warn"}"></span>{html.escape(status)}</span>'
+                f'<span class="pill"><span class="dot {"ok" if status == "ok" else "warn"}"></span>{html.escape(status)}</span>'
                 "</div>"
             )
         alert_html = []
@@ -334,7 +490,7 @@ class GuardianApp:
             )
         if not alert_html:
             alert_html.append('<div class="panel"><p class="note">עדיין אין התראות. הסריקה רצה ברקע.</p></div>')
-        running = self.state.get("running", True)
+        running = self.state.get("running", False)
         page = f"""<!DOCTYPE html>
 <html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Omnissa Guardian</title><style>{PAGE_CSS}</style>
@@ -365,7 +521,7 @@ class GuardianApp:
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button type="submit" name="action" value="save">שמירה</button>
-        <button type="submit" name="action" value="{"pause" if running else "resume"}">{("השהיה" if running else "המשך")}</button>
+        <button type="submit" name="action" value="{"pause" if running else "resume"}">{"השהיה" if running else "המשך"}</button>
         <button type="submit" name="action" value="scan">סריקה עכשיו</button>
       </div>
     </form>
@@ -383,12 +539,10 @@ class GuardianApp:
     def apply_settings(self, form: dict[str, list[str]]) -> str:
         action = (form.get("action") or ["save"])[0]
         if action == "pause":
-            self.state["running"] = False
-            self.save_config()
+            self.set_monitoring(False)
             return "הסריקה הושהתה"
         if action == "resume":
-            self.state["running"] = True
-            self.save_config()
+            self.set_monitoring(True)
             return "הסריקה חודשה"
         if action == "scan":
             count = self.scan_once()
@@ -397,14 +551,9 @@ class GuardianApp:
             interval = max(15, int((form.get("interval") or ["60"])[0]))
         except ValueError:
             interval = 60
-        self.state["interval_seconds"] = interval
-        enabled_ids = {key.removeprefix("enable_") for key in form if key.startswith("enable_")}
-        for target in self.state["targets"]:
-            target["enabled"] = target.get("id") in enabled_ids
+        enabled_ids = [key.removeprefix("enable_") for key in form if key.startswith("enable_")]
         extra = ((form.get("extra") or [""])[0] or "").strip()
-        if extra and extra not in self.state["extra_paths"]:
-            self.state["extra_paths"].append(extra)
-        self.save_config()
+        self.update_watch_dirs(enabled_ids=enabled_ids, interval=interval, extra=extra)
         return "ההגדרות נשמרו"
 
 
