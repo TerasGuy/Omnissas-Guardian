@@ -18,7 +18,7 @@ from omnissa_archive.library import (
     install_uploaded_database,
     resolve_default_database,
 )
-from omnissa_archive.urls import canonical_queue_url, resolve_link
+from omnissa_archive.urls import canonical_queue_url, kb_article_id, resolve_link
 
 TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
 BUNDLE_RE = re.compile(r"/bundle/([^/]+)/page/([^/.]+)")
@@ -98,6 +98,7 @@ nav.side a.active, nav.side a:hover { background: var(--teal); color: white; }
 .archive tr:last-child td { border-bottom: 0; }
 .archive tbody tr:hover td { background: #fff8f6; }
 .archive .when { width: 7.2rem; white-space: nowrap; color: var(--teal); font-variant-numeric: tabular-nums; }
+.archive .kbnum { width: 6.5rem; white-space: nowrap; color: var(--teal); font-variant-numeric: tabular-nums; }
 .archive .topic a { color: var(--ink); font-weight: 650; text-decoration: none; line-height: 1.4; }
 .archive .topic a:hover { color: var(--coral); }
 .archive .kind { color: var(--teal); font-size: 13px; line-height: 1.45; }
@@ -536,7 +537,7 @@ class ArchiveReader:
                 dict(row)
                 for row in conn.execute(
                     f"""
-                    SELECT id, title, product, product_family, version, category, published_at
+                    SELECT id, url, title, product, product_family, version, category, published_at
                     FROM documents
                     WHERE {where}
                     ORDER BY CASE WHEN published_at = '' THEN 1 ELSE 0 END,
@@ -566,10 +567,13 @@ class ArchiveReader:
         body_rows = []
         for row in rows:
             published = html.escape(row["published_at"]) if row["published_at"] else "—"
+            article_id = kb_article_id(row["url"] or "") if source == "kb" else None
+            kb_cell = html.escape(article_id) if article_id else "—"
             category = html.escape(_category_line(row)) or "—"
             body_rows.append(
                 "<tr>"
                 f'<td class="when">{published}</td>'
+                f'<td class="kbnum">{kb_cell}</td>'
                 f'<td class="topic"><a dir="auto" href="/read/{row["id"]}">{html.escape(row["title"] or "ללא כותרת")}</a></td>'
                 f'<td class="kind">{category}</td>'
                 "</tr>"
@@ -581,7 +585,7 @@ class ArchiveReader:
         next_link = f'<a href="{base}{_filter_query(chosen, page + 1)}">הבא</a>' if page < pages else ""
         listing = (
             '<div class="table-wrap"><table class="archive" dir="rtl">'
-            "<thead><tr><th>תאריך</th><th>נושא</th><th>קטגוריה</th></tr></thead>"
+            "<thead><tr><th>תאריך</th><th>מספר KB</th><th>נושא</th><th>קטגוריה</th></tr></thead>"
             f"<tbody>{''.join(body_rows)}</tbody></table></div>"
             if body_rows
             else '<p class="empty">אין פריטים שתואמים לסינון.</p>'

@@ -148,3 +148,53 @@ def test_catalog_filters_by_product_version_and_date(tmp_path: Path):
     assert "Old ports" not in page
     assert "מתאריך" in page
     assert "גרסה" in page
+    assert "<th>תאריך</th><th>מספר KB</th><th>נושא</th><th>קטגוריה</th>" in page
+    assert "2024-03-29" in page
+    assert "App Volumes" in page
+
+
+def test_catalog_shows_kb_article_id_only_for_kb_rows(tmp_path: Path):
+    reader = ArchiveReader(tmp_path)
+    conn = connect(tmp_path / "archive.sqlite")
+    init_db(conn)
+    shared = {
+        "locale": "en",
+        "guide": "Guide",
+        "html": "<p>Archived page body for catalog rendering.</p>",
+        "text": "Archived page body for catalog rendering.",
+        "http_status": 200,
+        "product_family": "Horizon",
+        "category": "Product Documentation",
+        "published_at": "2024-03-29",
+    }
+    upsert_document(
+        conn,
+        source="kb",
+        url="https://kb.omnissa.com/s/article/1027744",
+        title="Log locations",
+        product="Horizon",
+        version="8",
+        **shared,
+    )
+    upsert_document(
+        conn,
+        source="docs",
+        url="https://docs.omnissa.com/Horizon8InstallUpgrade/CompatibilityMatrix",
+        title="Compatibility matrix",
+        product="Horizon",
+        version="8",
+        **shared,
+    )
+    conn.commit()
+    conn.close()
+
+    kb_page = reader.catalog_page("kb", {}, 1).decode("utf-8")
+    assert "<th>מספר KB</th>" in kb_page
+    assert ">1027744<" in kb_page
+    assert "Log locations" in kb_page
+
+    docs_page = reader.catalog_page("docs", {}, 1).decode("utf-8")
+    assert "<th>מספר KB</th>" in docs_page
+    assert "1027744" not in docs_page
+    assert '<td class="kbnum">—</td>' in docs_page
+    assert "Compatibility matrix" in docs_page
