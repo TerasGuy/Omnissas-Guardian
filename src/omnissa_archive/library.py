@@ -228,11 +228,13 @@ def prepare_customer_package(source_data: Path, output_dir: Path) -> Path:
     readme.write_text(
         "חבילת ארכיון Omnissa ללקוח\r\n"
         "========================\r\n"
-        "1. הפעילו Open-Archive.bat\r\n"
-        "2. לדפדפן: http://127.0.0.1:8765/\r\n"
-        "3. לעדכון חודשי: העתיקו archive.sqlite חדש אל library\\inbox\\\r\n"
-        "   הקורא יטען אותו אוטומטית בלי ריסטארט.\r\n"
-        "4. תמונות נשמרות בתיקיית assets.\r\n",
+        "הפצה ללקוח היא קובץ ההתקנה OmnissaGuardianSetup.exe.\r\n"
+        "התיקייה הזו היא עותק פנימי של המסד והתמונות.\r\n"
+        "1. הארכיון נפתח בכתובת http://127.0.0.1:8765/ יחד עם חלון Guardian.\r\n"
+        "2. לעדכון חודשי או רבעוני: העתיקו archive.sqlite חדש אל data\\library\\inbox\\\r\n"
+        "   אחרי התקנה, או אל library\\inbox\\ בחבילה הזו.\r\n"
+        "   המסד נטען בלי ריסטארט.\r\n"
+        "3. תמונות נשמרות בתיקיית assets. בלי התיקייה המאמר נפתח והתמונות חסרות.\r\n",
         encoding="utf-8",
     )
     return package

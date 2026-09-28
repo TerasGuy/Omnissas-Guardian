@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import socket
 import sqlite3
 import threading
 import time
@@ -13,10 +14,10 @@ import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, quote_plus, urlparse
 
 from omnissa_archive.db import connect, init_db
-from omnissa_archive.library import assets_root_for, resolve_default_database
+from omnissa_archive.library import LibraryWatcher, assets_root_for, inbox_dir, resolve_default_database
 from omnissa_archive.solutions import suggest_solutions
 
 # Defaults from archived KB 1027744 (Location of Horizon View log files).
@@ -65,11 +66,35 @@ DEFAULT_LOG_TARGETS = [
     },
 ]
 
+# First pass reads the log that is already on disk. Huge files stay bounded to the tail.
+FIRST_SCAN_MAX_BYTES = 2 * 1024 * 1024
+
 ERROR_RE = re.compile(
     r"\b(error|exception|failed|failure|fatal|critical|unable to|cannot |warn(?:ing)?)\b",
     re.I,
 )
 LEVELS = ("FATAL", "ERROR", "WARNING", "DEBUG", "INFO")
+
+# Browser search templates from the earlier desktop client. They are never
+# opened during a log scan; only an explicit search does that, and only when
+# the operator turned the setting on and the network answers.
+DEFAULT_ONLINE_SOURCES = [
+    {"name": "Omnissa KB", "url": "https://kb.omnissa.com/s/global-search/{q}"},
+    {"name": "Omnissa TechZone", "url": "https://techzone.omnissa.com/search#q={q}"},
+    {"name": "Broadcom Support", "url": "https://support.broadcom.com/web/ecx/search#q={q}"},
+    {"name": "VMware Community", "url": "https://community.broadcom.com/search?q={q}"},
+    {"name": "Reddit r/vmware", "url": "https://www.reddit.com/r/vmware/search/?q={q}"},
+    {"name": "Google", "url": "https://www.google.com/search?q=Omnissa+Horizon+{q}"},
+]
+
+
+def network_reachable(host: str = "kb.omnissa.com", port: int = 443, timeout: float = 2.0) -> bool:
+    """True when a short TCP connection to the public KB host succeeds."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def classify_level(line: str) -> str:
@@ -173,7 +198,10 @@ class GuardianApp:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._alert_seq = 0
+        inbox_dir(data_dir)
+        self.library = LibraryWatcher(data_dir)
         db = resolve_default_database(data_dir)
+        self.library.bind(db)
         conn = connect(db)
         init_db(conn)
         conn.close()
@@ -200,7 +228,23 @@ class GuardianApp:
             "running": bool(data.get("running", False)),
             "language": lang if lang in ("he", "en") else "he",
             "reader_base": str(data.get("reader_base") or self.reader_base),
+            "online_search": bool(data.get("online_search", False)),
+            "online_sources": self._online_sources_from(data.get("online_sources")),
         }
+
+    @staticmethod
+    def _online_sources_from(raw) -> list[dict]:
+        sources = []
+        for item in raw or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if name and "{q}" in url:
+                sources.append({"name": name, "url": url})
+        if sources:
+            return sources
+        return [dict(item) for item in DEFAULT_ONLINE_SOURCES]
 
     def save_config(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -210,7 +254,11 @@ class GuardianApp:
         )
 
     def database_path(self) -> Path:
-        return resolve_default_database(self.data_dir)
+        current = resolve_default_database(self.data_dir)
+        event = self.library.poll(current)
+        if event is not None:
+            return event.path
+        return current
 
     def _conn(self) -> sqlite3.Connection:
         conn = connect(self.database_path())
@@ -264,22 +312,27 @@ class GuardianApp:
             size = path.stat().st_size
         except OSError:
             return 0
-        if key not in self.offsets:
-            # First sighting: baseline at EOF so only new lines generate alerts.
-            self.offsets[key] = size
-            return 0
-        offset = self.offsets[key]
-        if offset > size:
-            offset = 0
-        if size == offset:
-            return 0
+        first = key not in self.offsets
+        if first:
+            offset = 0 if size <= FIRST_SCAN_MAX_BYTES else size - FIRST_SCAN_MAX_BYTES
+        else:
+            offset = self.offsets[key]
+            if offset > size:
+                offset = 0
+            if size == offset:
+                return 0
         added = 0
         try:
-            with path.open("r", encoding="utf-8", errors="replace") as handle:
-                handle.seek(offset)
-                chunk = handle.read()
+            with path.open("rb") as handle:
+                if offset:
+                    handle.seek(offset)
+                    if first:
+                        handle.readline()
+                chunk = handle.read().decode("utf-8", errors="replace")
                 new_offset = handle.tell()
         except OSError:
+            if first:
+                self.offsets[key] = size
             return 0
         self.offsets[key] = new_offset
         for line in chunk.splitlines():
@@ -362,7 +415,34 @@ class GuardianApp:
             "system_log": system,
             "targets": targets,
             "extra_paths": extras,
+            "online_search": bool(self.state.get("online_search")),
+            "online_sources": list(self.state.get("online_sources") or []),
         }
+
+    def set_online_search(self, enabled: bool) -> None:
+        self.state["online_search"] = bool(enabled)
+
+    def prepare_online_search(self, query: str) -> dict:
+        """Build online search links. Never called from the log scan.
+
+        Disabled by default. When the setting is on, links are returned only
+        if the public KB host accepts a short connection.
+        """
+        sources = list(self.state.get("online_sources") or [])
+        text = (query or "").strip()
+        if not self.state.get("online_search"):
+            return {"status": "disabled", "urls": [], "sources": sources}
+        if not text:
+            return {"status": "empty", "urls": [], "sources": sources}
+        if not network_reachable():
+            return {"status": "offline", "urls": [], "sources": sources}
+        encoded = quote_plus(text[:200])
+        urls = [
+            {"name": source["name"], "url": source["url"].replace("{q}", encoded)}
+            for source in sources
+            if "{q}" in (source.get("url") or "")
+        ]
+        return {"status": "ok", "urls": urls, "sources": sources}
 
     def update_watch_dirs(
         self,

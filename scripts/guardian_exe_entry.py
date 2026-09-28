@@ -7,9 +7,6 @@ import sys
 def main() -> int:
     if getattr(sys, "frozen", False):
         root = Path(sys.executable).resolve().parent
-        # Prefer project root when EXE lives in dist/
-        if root.name.lower() == "dist":
-            root = root.parent
     else:
         root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"

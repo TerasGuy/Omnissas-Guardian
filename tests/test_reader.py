@@ -11,6 +11,22 @@ from omnissa_archive.reader import (
 )
 
 
+def test_start_archive_server_answers(tmp_path: Path):
+    import urllib.request
+
+    from omnissa_archive.reader import start_archive_server
+
+    server = start_archive_server(tmp_path, port=0)
+    try:
+        port = server.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+            assert response.status == 200
+            assert b"Omnissa" in response.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_fts_query_prefixes_every_word():
     assert fts_query("connection error") == '"connection"* AND "error"*'
     assert fts_query("  ") == ""

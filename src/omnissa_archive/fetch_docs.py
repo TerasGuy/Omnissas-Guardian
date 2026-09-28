@@ -6,6 +6,7 @@ from omnissa_archive.assets import RateLimiter
 from omnissa_archive.config import DOCS_RPS, HEADERS
 from omnissa_archive.db import enqueue, get_document, mark_error, mark_running
 from omnissa_archive.extract import extract_docs
+from omnissa_archive.progress import log_download
 from omnissa_archive.store import keep_current, page_is_current, save_page
 
 
@@ -14,6 +15,7 @@ def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
         return 0
     limiter = RateLimiter(DOCS_RPS)
     saved = 0
+    total = len(urls)
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=45.0) as client:
         for index, url in enumerate(urls, start=1):
             enqueue(conn, [(url, "docs")])
@@ -24,22 +26,30 @@ def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
             except httpx.HTTPError as exc:
                 mark_error(conn, url, str(exc))
                 conn.commit()
-                print(f"docs {index}/{len(urls)} error {url}: {exc}", flush=True)
+                log_download(conn, "docs", index, total, url, f"error {url}: {exc}")
                 continue
             if response.status_code != 200:
                 mark_error(conn, url, f"http {response.status_code}")
                 conn.commit()
-                print(f"docs {index}/{len(urls)} http {response.status_code} {url}", flush=True)
+                log_download(
+                    conn,
+                    "docs",
+                    index,
+                    total,
+                    url,
+                    f"http {response.status_code} {url}",
+                )
                 continue
             extracted = extract_docs(str(response.url), response.text)
             if extracted is None:
                 mark_error(conn, url, "missing doc-body")
                 conn.commit()
-                print(f"docs {index}/{len(urls)} no body {url}", flush=True)
+                log_download(conn, "docs", index, total, url, f"no body {url}")
                 continue
             if page_is_current(get_document(conn, url), extracted):
                 keep_current(conn, url, response.status_code)
-                print(f"docs {index}/{len(urls)} unchanged {extracted.updated_at or extracted.title}", flush=True)
+                label = extracted.updated_at or extracted.title or url
+                log_download(conn, "docs", index, total, url, f"unchanged {label}")
                 continue
             save_page(
                 conn,
@@ -52,5 +62,12 @@ def fetch_docs(conn, data_dir: Path, urls: list[str]) -> int:
                 extracted=extracted,
             )
             saved += 1
-            print(f"docs {index}/{len(urls)} {extracted.title}", flush=True)
+            log_download(
+                conn,
+                "docs",
+                index,
+                total,
+                url,
+                extracted.title or url,
+            )
     return saved

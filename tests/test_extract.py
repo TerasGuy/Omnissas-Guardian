@@ -98,6 +98,23 @@ def test_extract_kb_reads_tags_and_published_time():
     assert extracted.updated_at == "2025-04-01"
 
 
+def test_kb_last_updated_overrides_the_meta_time():
+    html = """
+    <html><head>
+      <meta name="article:published_time" content="2025-04-01 19:50:15">
+      <meta name="article:modified_time" content="2025-04-01 19:50:15">
+    </head><body>
+      <h1 class="article-title">Location of Horizon View log files (1027744)</h1>
+      <div class="article-meta">Last updated: 7/11/2025</div>
+      <div id="article_content"><p>This article provides the locations of Horizon log files for connection servers and agents.</p></div>
+    </body></html>
+    """
+    extracted = extract_kb("https://kb.omnissa.com/s/article/1027744", html)
+    assert extracted is not None
+    assert extracted.published_at == "2025-04-01"
+    assert extracted.updated_at == "2025-07-11"
+
+
 def test_kb_render_state_distinguishes_missing_articles():
     from omnissa_archive.fetch_kb import kb_render_state
 

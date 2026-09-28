@@ -14,6 +14,7 @@ from omnissa_archive.urls import (
 
 _VERSION_IN_URL = re.compile(r"-V(\d{4}|SaaS)(?:/|$)", re.IGNORECASE)
 _ISO_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+_LAST_UPDATED = re.compile(r"Last updated:\s*(\d{1,2})/(\d{1,2})/(\d{4})", re.IGNORECASE)
 
 
 @dataclass
@@ -36,6 +37,16 @@ def _meta_content(soup: BeautifulSoup, name: str) -> str:
     if tag is None:
         return ""
     return " ".join((tag.get("content") or "").split())
+
+
+def last_updated_date(text: str) -> str:
+    match = _LAST_UPDATED.search(text or "")
+    if match is None:
+        return ""
+    month, day, year = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def _date_only(value: str) -> str:
@@ -82,13 +93,14 @@ def metadata_from_kb(soup: BeautifulSoup, page_url: str = "") -> dict[str, str]:
         title = title_node.get_text(" ", strip=True).lower() if title_node else ""
         groups[title] = [pill.get_text(" ", strip=True) for pill in group.select(".tag")]
     category = _join_tags(groups.get("category", [])) or _meta_content(soup, "article:section")
+    visible_update = last_updated_date(soup.get_text("\n", strip=True))
     return {
         "product": _join_tags(groups.get("product", [])),
         "product_family": "",
         "version": _join_tags(groups.get("version", [])),
         "category": category,
         "published_at": _date_only(_meta_content(soup, "article:published_time")),
-        "updated_at": _date_only(_meta_content(soup, "article:modified_time")),
+        "updated_at": visible_update or _date_only(_meta_content(soup, "article:modified_time")),
     }
 
 

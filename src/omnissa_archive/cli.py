@@ -11,6 +11,7 @@ from omnissa_archive.discover import discover_docs, discover_kb
 from omnissa_archive.fetch_docs import fetch_docs
 from omnissa_archive.fetch_kb import fetch_kb
 from omnissa_archive.pilot import run_pilot
+from omnissa_archive.progress import log_progress
 from omnissa_archive.reader import serve
 
 
@@ -44,13 +45,12 @@ def _discover(data_dir: Path) -> None:
 def _fetch(data_dir: Path, source: str, limit: int) -> None:
     conn = _crawl_db(data_dir)
     counts = queue_counts(conn)
-    print(
+    log_progress(
         "resume "
         f"pending={counts.get('pending', 0)} "
         f"running={counts.get('running', 0)} "
         f"done={counts.get('done', 0)} "
-        f"error={counts.get('error', 0)}",
-        flush=True,
+        f"error={counts.get('error', 0)}"
     )
     if source in ("docs", "all"):
         fetch_docs(conn, data_dir, pending_urls(conn, "docs", limit))

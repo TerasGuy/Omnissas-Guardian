@@ -3,6 +3,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -784,13 +785,23 @@ def build_handler(data_dir: Path):
     return Handler
 
 
-def serve(data_dir: Path, port: int = 8765, open_browser: bool = True) -> None:
+def start_archive_server(data_dir: Path, port: int = 8765) -> ThreadingHTTPServer:
+    """Serve the local archive on this computer. Returns the running server."""
     server = ThreadingHTTPServer(("127.0.0.1", port), build_handler(data_dir))
-    url = f"http://127.0.0.1:{port}/"
-    print(f"reader {url}", flush=True)
+    thread = threading.Thread(target=server.serve_forever, name="archive-reader", daemon=True)
+    thread.start()
+    print(f"reader http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    return server
+
+
+def serve(data_dir: Path, port: int = 8765, open_browser: bool = True) -> None:
+    server = start_archive_server(data_dir, port=port)
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
     if open_browser:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
-        server.serve_forever()
+        while True:
+            time.sleep(0.5)
     except KeyboardInterrupt:
         server.shutdown()
+        server.server_close()

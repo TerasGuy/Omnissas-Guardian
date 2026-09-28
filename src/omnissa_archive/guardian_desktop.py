@@ -8,6 +8,8 @@ from pathlib import Path
 from omnissa_archive.guardian import GuardianApp
 from omnissa_archive.guardian_i18n import STRINGS, normalize_lang, t
 
+_ICON = Path(__file__).resolve().parents[2] / "assets" / "omnissa-guardian.ico"
+
 DESKTOP_HTML = r"""<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -197,6 +199,11 @@ input[type=text], input[type=number] {
       </div>
       <input type="text" id="kb-query" style="margin-top:8px">
       <div id="kb-results" style="margin-top:10px"></div>
+      <h3 id="online-title" style="margin-top:18px"></h3>
+      <p class="hint" id="online-help"></p>
+      <div id="online-sources"></div>
+      <button class="btn" id="btn-online" type="button" style="margin-top:10px"></button>
+      <p class="hint" id="online-status"></p>
     </section>
 
     <section class="panel tabpane hidden" id="pane-settings">
@@ -210,7 +217,12 @@ input[type=text], input[type=number] {
         </label>
         <label><span id="lbl-settings-interval"></span><input type="number" id="settings-interval" min="15" step="15"></label>
         <label style="grid-column:1/-1"><span id="lbl-settings-reader"></span><input type="text" id="settings-reader"></label>
+        <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center">
+          <input type="checkbox" id="settings-online" style="width:auto">
+          <span id="lbl-settings-online"></span>
+        </label>
       </div>
+      <p class="hint" id="online-settings-hint"></p>
       <button class="btn purple" id="btn-settings-save" type="button" style="margin-top:12px"></button>
     </section>
 
@@ -233,6 +245,8 @@ input[type=text], input[type=number] {
       <pre id="detail-builtin"></pre>
       <p><strong id="kb-matches-lbl"></strong></p>
       <div id="detail-kb"></div>
+      <button class="btn" id="btn-detail-online" type="button" style="margin-top:10px"></button>
+      <p class="hint" id="detail-online-status"></p>
       <button class="btn" id="btn-close" type="button" style="margin-top:10px"></button>
     </div>
   </div>
@@ -260,15 +274,21 @@ const interval = $("interval"), extra = $("extra");
 const btnSave = $("btn-save"), btnScan = $("btn-scan");
 const kbTitle = $("kb-title"), lblDb = $("lbl-db"), dbPath = $("db-path");
 const btnOpenReader = $("btn-open-reader"), kbQuery = $("kb-query"), kbResults = $("kb-results");
+const onlineTitle = $("online-title"), onlineHelp = $("online-help");
+const onlineSources = $("online-sources"), btnOnline = $("btn-online"), onlineStatus = $("online-status");
 const settingsTitle = $("settings-title"), lblSettingsLang = $("lbl-settings-lang");
 const lblSettingsInterval = $("lbl-settings-interval"), lblSettingsReader = $("lbl-settings-reader");
+const lblSettingsOnline = $("lbl-settings-online"), onlineSettingsHint = $("online-settings-hint");
 const settingsLang = $("settings-lang"), settingsInterval = $("settings-interval");
-const settingsReader = $("settings-reader"), btnSettingsSave = $("btn-settings-save");
+const settingsReader = $("settings-reader"), settingsOnline = $("settings-online");
+const btnSettingsSave = $("btn-settings-save");
 const emailTitle = $("email-title"), emailStub = $("email-stub");
 const systemTitle = $("system-title"), systemLog = $("system-log"), systemEmpty = $("system-empty");
 const modal = $("modal"), detailTitle = $("detail-title"), builtInLbl = $("built-in-lbl");
 const kbMatchesLbl = $("kb-matches-lbl"), detailBuiltin = $("detail-builtin");
-const detailKb = $("detail-kb"), btnClose = $("btn-close");
+const detailKb = $("detail-kb"), btnDetailOnline = $("btn-detail-online");
+const detailOnlineStatus = $("detail-online-status"), btnClose = $("btn-close");
+let detailLine = "";
 
 function S(key, vars) {
   let s = (state.strings[state.lang] || {})[key] || key;
@@ -311,11 +331,17 @@ function applyI18n() {
   lblDb.textContent = S("kb_db");
   btnOpenReader.textContent = S("kb_open_reader");
   kbQuery.placeholder = S("kb_search_placeholder");
+  onlineTitle.textContent = S("online_title");
+  onlineHelp.textContent = S("online_help");
+  btnOnline.textContent = S("online_search_btn");
   settingsTitle.textContent = S("settings_title");
   lblSettingsLang.textContent = S("settings_lang");
   lblSettingsInterval.textContent = S("settings_interval");
   lblSettingsReader.textContent = S("settings_reader");
+  lblSettingsOnline.textContent = S("settings_online");
+  onlineSettingsHint.textContent = S("settings_online_hint");
   btnSettingsSave.textContent = S("save");
+  btnDetailOnline.textContent = S("online_search_btn");
   emailTitle.textContent = S("email_title");
   emailStub.textContent = S("email_stub");
   systemTitle.textContent = S("system_title");
@@ -352,11 +378,36 @@ function showTab() {
   if (state.tab === "history") renderHistory();
   if (state.tab === "watch") renderTargets();
   if (state.tab === "system") renderSystem();
+  if (state.tab === "kb") renderOnlineSources();
   if (state.tab === "settings" && state.snap) {
     settingsLang.value = state.snap.language;
     settingsInterval.value = state.snap.interval_seconds;
     settingsReader.value = state.snap.reader_base;
+    settingsOnline.checked = !!state.snap.online_search;
   }
+}
+
+function renderOnlineSources() {
+  const sources = (state.snap && state.snap.online_sources) || [];
+  onlineSources.innerHTML = sources.map(s => `
+    <div class="path-row">
+      <div></div>
+      <div><strong>${esc(s.name||"")}</strong><code>${esc(s.url||"")}</code></div>
+      <span></span>
+    </div>`).join("");
+}
+
+function onlineMessage(result) {
+  const status = (result && result.status) || "disabled";
+  if (status === "offline") return S("online_offline");
+  if (status === "empty") return S("online_empty");
+  if (status === "ok") return S("online_opened", {n: (result.urls||[]).length});
+  return S("online_disabled");
+}
+
+async function runOnlineSearch(query, statusEl) {
+  const result = await window.pywebview.api.search_online(query || "");
+  statusEl.textContent = onlineMessage(result);
 }
 
 function renderFilters() {
@@ -468,6 +519,8 @@ function renderSystem() {
 
 function openDetail(alert) {
   if (!alert) return;
+  detailLine = alert.line || "";
+  detailOnlineStatus.textContent = "";
   detailBuiltin.textContent = alert.suggestion || "";
   const items = alert.suggestions || [];
   detailKb.innerHTML = items.length ? items.map(s => `
@@ -490,6 +543,7 @@ async function refresh() {
   renderLive();
   if (state.tab === "history") renderHistory();
   if (state.tab === "watch") renderTargets();
+  if (state.tab === "kb") renderOnlineSources();
   if (state.tab === "system") renderSystem();
 }
 
@@ -518,9 +572,15 @@ btnScan.onclick = async () => { await window.pywebview.api.scan_now(); await ref
 btnOpenReader.onclick = async () => { await window.pywebview.api.open_reader(); };
 btnSettingsSave.onclick = async () => {
   await window.pywebview.api.set_language(settingsLang.value);
-  await window.pywebview.api.save_settings(Number(settingsInterval.value||60), settingsReader.value||"");
+  await window.pywebview.api.save_settings(
+    Number(settingsInterval.value||60),
+    settingsReader.value||"",
+    !!settingsOnline.checked
+  );
   await refresh();
 };
+btnOnline.onclick = () => runOnlineSearch(kbQuery.value || "", onlineStatus);
+btnDetailOnline.onclick = () => runOnlineSearch(detailLine, detailOnlineStatus);
 btnClose.onclick = () => modal.classList.remove("open");
 kbQuery.addEventListener("keydown", async (ev) => {
   if (ev.key !== "Enter") return;
@@ -570,14 +630,24 @@ class GuardianApi:
         key = "extra_added" if notice == "extra_added" else "saved"
         return t(self.app.language(), key)
 
-    def save_settings(self, interval: int, reader_base: str = "") -> str:
-        enabled = [t["id"] for t in self.app.state["targets"] if t.get("enabled")]
+    def save_settings(self, interval: int, reader_base: str = "", online_search: bool = False) -> str:
+        enabled = [item["id"] for item in self.app.state["targets"] if item.get("enabled")]
+        self.app.set_online_search(bool(online_search))
         self.app.update_watch_dirs(
             enabled_ids=enabled,
             interval=int(interval or 60),
             reader_base=reader_base or None,
         )
         return t(self.app.language(), "saved")
+
+    def search_online(self, query: str) -> dict:
+        result = self.app.prepare_online_search(query or "")
+        if result.get("status") == "ok":
+            for item in result.get("urls") or []:
+                url = item.get("url") or ""
+                if url:
+                    webbrowser.open(url)
+        return result
 
     def scan_now(self) -> str:
         count = self.app.scan_once()
@@ -600,6 +670,15 @@ def run_desktop(
     reader_base: str = "http://127.0.0.1:8765",
 ) -> None:
     import webview
+    from urllib.parse import urlparse
+
+    from omnissa_archive.reader import start_archive_server
+
+    parsed = urlparse(reader_base)
+    try:
+        start_archive_server(data_dir, port=parsed.port or 8765)
+    except OSError as exc:
+        print(f"reader already running: {exc}", flush=True)
 
     app = GuardianApp(data_dir, reader_base=reader_base)
     app.start_worker()
@@ -622,5 +701,5 @@ def run_desktop(
     except Exception:
         pass
     print("guardian-desktop ready", flush=True)
-    webview.start(debug=False)
+    webview.start(debug=False, icon=str(_ICON) if _ICON.is_file() else None)
     app.stop()

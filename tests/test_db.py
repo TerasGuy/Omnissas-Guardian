@@ -1,7 +1,17 @@
 from pathlib import Path
 
-from omnissa_archive.db import connect, content_hash, enqueue, get_document, init_db, search, upsert_document
-from omnissa_archive.discover import parse_locs
+from omnissa_archive.db import (
+    apply_remote_revisions,
+    connect,
+    content_hash,
+    enqueue,
+    get_document,
+    init_db,
+    search,
+    upsert_document,
+)
+from omnissa_archive.discover import parse_locs, parse_sitemap_entries
+from omnissa_archive.extract import Extracted
 
 
 def test_parse_sitemap_locs():
@@ -113,3 +123,64 @@ def test_facet_columns_are_added_and_kept_when_content_is_unchanged(tmp_path: Pa
     assert stored["version"] == "2606"
     assert stored["published_at"] == "2024-03-29"
     assert stored["facets_at"]
+
+
+def test_sitemap_lastmod_stamps_once_and_requeues_only_when_it_changes(tmp_path: Path):
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>https://kb.omnissa.com/s/article/1027744</loc><lastmod>2025-07-11</lastmod></url>
+    </urlset>
+    """
+    assert parse_sitemap_entries(xml) == [("https://kb.omnissa.com/s/article/1027744", "2025-07-11")]
+    conn = connect(tmp_path / "archive.sqlite")
+    init_db(conn)
+    url = "https://kb.omnissa.com/s/article/1027744"
+    enqueue(conn, [(url, "kb")])
+    upsert_document(
+        conn,
+        source="kb",
+        url=url,
+        locale="en",
+        title="Location of Horizon View log files",
+        guide="kb",
+        html="<p>Horizon log files stay in the same place.</p>",
+        text="Horizon log files stay in the same place.",
+        http_status=200,
+        updated_at="2025-04-01",
+    )
+    conn.execute("UPDATE crawl_queue SET status = 'done' WHERE url = ?", (url,))
+    conn.commit()
+    first = apply_remote_revisions(conn, {url: "2025-07-11"})
+    assert first == {"stamped": 1, "changed": 0}
+    assert get_document(conn, url)["sitemap_lastmod"] == "2025-07-11"
+    assert conn.execute("SELECT status FROM crawl_queue WHERE url = ?", (url,)).fetchone()["status"] == "done"
+    second = apply_remote_revisions(conn, {url: "2025-07-11"})
+    assert second == {"stamped": 0, "changed": 0}
+    third = apply_remote_revisions(conn, {url: "2026-01-02"})
+    assert third == {"stamped": 0, "changed": 1}
+    assert conn.execute("SELECT status FROM crawl_queue WHERE url = ?", (url,)).fetchone()["status"] == "pending"
+
+
+def test_same_last_updated_date_skips_a_new_download(tmp_path: Path):
+    from omnissa_archive.store import page_is_current
+
+    conn = connect(tmp_path / "archive.sqlite")
+    init_db(conn)
+    upsert_document(
+        conn,
+        source="kb",
+        url="https://kb.omnissa.com/s/article/1027744",
+        locale="en",
+        title="Location of Horizon View log files",
+        guide="kb",
+        html="<p>Horizon log files stay in the same place.</p>",
+        text="Horizon log files stay in the same place.",
+        http_status=200,
+        updated_at="2025-04-01",
+    )
+    conn.commit()
+    existing = get_document(conn, "https://kb.omnissa.com/s/article/1027744")
+    same = Extracted(title="changed title", html="<p>x</p>", text="different body", updated_at="2025-04-01")
+    newer = Extracted(title="changed title", html="<p>x</p>", text="different body", updated_at="2026-01-02")
+    assert page_is_current(existing, same) is True
+    assert page_is_current(existing, newer) is False
