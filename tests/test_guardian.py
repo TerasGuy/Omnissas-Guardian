@@ -144,3 +144,74 @@ def test_log_scan_does_not_query_online_sources(tmp_path: Path, monkeypatch):
     ]
     app.state["extra_paths"] = []
     assert app.scan_once() == 1
+
+
+def test_stopping_monitor_drops_the_rest_of_the_scan(tmp_path: Path, monkeypatch):
+    from omnissa_archive.db import connect, init_db
+
+    data = tmp_path / "data"
+    data.mkdir()
+    conn = connect(data / "archive.sqlite")
+    init_db(conn)
+    conn.close()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "broker.log").write_text(
+        "ERROR first LDAP timeout\nERROR second LDAP timeout\n",
+        encoding="utf-8",
+    )
+    app = GuardianApp(data)
+    app.set_monitoring(True)
+    app.state["targets"] = [
+        {"id": "custom", "label": "Test logs", "path": str(logs), "enabled": True}
+    ]
+    original = app._make_alert
+
+    def stop_after_first(*args, **kwargs):
+        alert = original(*args, **kwargs)
+        app.set_monitoring(False)
+        return alert
+
+    monkeypatch.setattr(app, "_make_alert", stop_after_first)
+    assert app.scan_once(stop_when_paused=True) == 1
+    assert len(app.alerts) == 1
+    app.set_monitoring("false")
+    assert app.state["running"] is False
+
+
+def test_builtin_watch_paths_can_be_edited_and_removed(tmp_path: Path):
+    data = tmp_path / "data"
+    data.mkdir()
+    app = GuardianApp(data)
+    assert any(item["id"] == "connection-server" for item in app.state["targets"])
+    kept = [dict(item) for item in app.state["targets"] if item["id"] != "connection-server"]
+    kept[0]["label"] = "Renamed logs"
+    kept[0]["path"] = r"D:\site\logs"
+    app.set_watch_targets(kept, 45)
+
+    reloaded = GuardianApp(data)
+    ids = [item["id"] for item in reloaded.state["targets"]]
+    assert "connection-server" not in ids
+    renamed = next(item for item in reloaded.state["targets"] if item["id"] == kept[0]["id"])
+    assert renamed["label"] == "Renamed logs"
+    assert renamed["path"] == r"D:\site\logs"
+    assert reloaded.state["interval_seconds"] == 45
+
+    reloaded.set_watch_targets([], 60)
+    empty = GuardianApp(data)
+    assert empty.state["targets"] == []
+
+
+def test_saved_extra_path_becomes_an_editable_target(tmp_path: Path):
+    import json
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "guardian_config.json").write_text(
+        json.dumps({"targets": [], "extra_paths": ["\\\\server\\share\\logs"]}),
+        encoding="utf-8",
+    )
+    app = GuardianApp(data)
+    assert app.state["extra_paths"] == []
+    assert app.state["targets"][0]["path"] == r"\\server\share\logs"
+    assert app.state["targets"][0]["enabled"] is True

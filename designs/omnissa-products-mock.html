@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Design · Omnissa Archive + Guardian</title>
+  <style>
+    :root {
+      --ink: #2c2c3e;
+      --coral: #f07a58;
+      --teal: #365565;
+      --teal-mid: #4d889d;
+      --gold: #e8b545;
+      --line: #bebec6;
+      --paper: #f4f4f6;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 70% -80px, #f8d2c6, transparent 55%),
+        var(--paper);
+    }
+    .app { display: flex; min-height: 100vh; }
+    nav.side {
+      width: 220px;
+      flex: none;
+      background: var(--ink);
+      padding: 28px 14px;
+      color: var(--line);
+    }
+    .brand {
+      color: white;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-size: 18px;
+      margin: 0 10px 22px;
+    }
+    .brand span { color: var(--coral); }
+    nav.side button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      color: var(--line);
+      padding: 12px 14px;
+      border-radius: 12px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 600;
+    }
+    nav.side button.active,
+    nav.side button:hover { background: var(--teal); color: white; }
+    .content { flex: 1; min-width: 0; padding: 24px 28px 48px; }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.04em; }
+    .sub { color: var(--teal); margin: 0 0 20px; font-size: 14px; }
+    .panel {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 16px 18px;
+      box-shadow: 0 14px 36px rgba(44,44,62,.05);
+      margin-bottom: 16px;
+    }
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--teal);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--teal-mid);
+    }
+    .dot.ok { background: #3d9a78; }
+    .dot.warn { background: var(--gold); }
+    .dot.alert { background: var(--coral); }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px 14px;
+    }
+    label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    label span { color: var(--teal); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+    select, input[type=date], input[type=text], input[type=number] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: var(--paper);
+      color: var(--ink);
+      font: inherit;
+    }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    button.primary {
+      background: var(--coral);
+      color: white;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      border: 0;
+      color: var(--teal);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .table-wrap { overflow: auto; }
+    table.archive {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    table.archive th {
+      text-align: left;
+      font-size: 12px;
+      letter-spacing: .04em;
+      color: var(--teal);
+      background: #f7f7f9;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    table.archive td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #ececef;
+      vertical-align: top;
+    }
+    table.archive tr:hover td { background: #fff8f6; }
+    .when { width: 7.2rem; white-space: nowrap; color: var(--teal); font-variant-numeric: tabular-nums; }
+    .topic { font-weight: 650; }
+    .kind { color: var(--teal); font-size: 13px; line-height: 1.45; }
+    .search {
+      display: flex;
+      gap: 10px;
+      max-width: 680px;
+      margin: 0 auto 18px;
+    }
+    .search input {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      padding: 14px 16px;
+      box-shadow: 0 8px 24px rgba(44,44,62,.06);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 16px;
+    }
+    .path-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding: 12px 0;
+      border-bottom: 1px solid #ececef;
+    }
+    .path-row:last-child { border-bottom: 0; }
+    .path-row strong { display: block; font-size: 14px; }
+    .path-row code {
+      display: block;
+      margin-top: 4px;
+      color: var(--teal);
+      font-size: 12px;
+      word-break: break-all;
+      background: transparent;
+    }
+    .alert {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      background: linear-gradient(#fff, #fff) padding-box,
+                  linear-gradient(160deg, #f07a58, #f6e3b0) border-box;
+    }
+    .alert .meta { color: var(--teal); font-size: 12px; margin-bottom: 6px; }
+    .alert .log {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      background: var(--paper);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 8px 0 12px;
+      direction: ltr;
+      text-align: left;
+    }
+    .suggest {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+    .suggest h3 { margin: 0 0 4px; font-size: 15px; }
+    .suggest p { margin: 0; color: var(--teal); font-size: 13px; line-height: 1.45; }
+    .hidden { display: none; }
+    .note {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--teal);
+    }
+    @media (max-width: 980px) {
+      .app { flex-direction: column; }
+      nav.side { width: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      .brand { width: 100%; margin-bottom: 8px; }
+      .filters, .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <nav class="side">
+      <div class="brand">Omnissa <span>Suite</span></div>
+      <button class="active" data-view="archive" type="button">Customer archive</button>
+      <button data-view="guardian" type="button">Omnissa Guardian</button>
+    </nav>
+
+    <main class="content">
+      <section id="view-archive">
+        <h1>Omnissa archive</h1>
+        <p class="sub">Portable customer package · offline reading and search · live database reload</p>
+
+        <div class="search">
+          <input type="search" value="" placeholder="Search: error, Horizon, article number" />
+          <button class="primary" type="button">Search</button>
+        </div>
+
+        <div class="panel status-bar">
+          <div class="pill"><span class="dot ok"></span> Active database: library/archive.sqlite</div>
+          <div class="pill"><span class="dot ok"></span> Live reload · updated 12 seconds ago</div>
+          <div class="pill">875 documents · 26 KB articles</div>
+        </div>
+
+        <div class="panel">
+          <div class="filters">
+            <label><span>Product family</span><select><option>All</option><option>Horizon</option><option>Omnissa Workspace ONE</option></select></label>
+            <label><span>Product</span><select><option>All</option><option selected>Horizon 8</option><option>Omnissa App Volumes</option></select></label>
+            <label><span>Version</span><select><option>All</option><option selected>2606</option><option>2412</option></select></label>
+            <label><span>Category</span><select><option>All</option><option>Product Documentation</option><option>Release Notes</option></select></label>
+            <label><span>From</span><input type="date" value="2024-01-01" /></label>
+            <label><span>To</span><input type="date" value="2024-12-31" /></label>
+            <div class="actions">
+              <button class="primary" type="button">Filter</button>
+              <button class="ghost" type="button">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="sub" style="margin-top:0">Showing 1–3 of 3 (prototype)</p>
+        <div class="panel table-wrap" style="padding:0">
+          <table class="archive">
+            <thead>
+              <tr><th>Date</th><th>Subject</th><th>Category</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="when">2024-04-10</td>
+                <td class="topic">Omnissa Horizon 8 Release Notes</td>
+                <td class="kind">Horizon · Horizon 8 · 2606 · Release Notes</td>
+              </tr>
+              <tr>
+                <td class="when">2025-04-01</td>
+                <td class="topic">Location of Horizon View log files (1027744)</td>
+                <td class="kind">Troubleshooting · Horizon</td>
+              </tr>
+              <tr>
+                <td class="when">2024-04-16</td>
+                <td class="topic">System Requirements for Server Components</td>
+                <td class="kind">Horizon · Horizon 8 · Product Documentation</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">Customer package: a small EXE plus library/archive.sqlite and assets/. Replacing the database file loads automatically.</p>
+      </section>
+
+      <section id="view-guardian" class="hidden">
+        <h1>Omnissa Guardian</h1>
+        <p class="sub">Local and UNC log monitoring · early alerts · a suggested article from the archive</p>
+
+        <div class="panel status-bar">
+          <div class="pill"><span class="dot ok"></span> Scan running</div>
+          <div class="pill">Interval: 60 seconds</div>
+          <div class="pill">Last scan: 00:21:08</div>
+          <div class="pill"><span class="dot warn"></span> 1 open alert</div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="status-bar" style="margin-bottom:8px">
+              <strong>Log locations</strong>
+              <button class="ghost" type="button">+ Path / UNC</button>
+            </div>
+            <p class="note" style="margin:0 0 8px">Defaults from KB 1027744. Paths can be turned off or added.</p>
+
+            <div class="path-row">
+              <input type="checkbox" checked />
+              <div>
+                <strong>Connection / Replica Server</strong>
+                <code>%ProgramData%\Omnissa\Horizon\logs</code>
+              </div>
+              <span class="pill"><span class="dot ok"></span> Reachable</span>
+            </div>
+            <div class="path-row">
+              <input type="checkbox" checked />
+              <div>
+                <strong>Horizon Agent (Windows)</strong>
+                <code>%ProgramData%\Omnissa\Horizon\logs</code>
+              </div>
+              <span class="pill"><span class="dot ok"></span> Reachable</span>
+            </div>
+            <div class="path-row">
+              <input type="checkbox" checked />
+              <div>
+                <strong>Blast Service</strong>
+                <code>%ProgramData%\Omnissa\Horizon\logs\Blast-Service.log</code>
+              </div>
+              <span class="pill"><span class="dot ok"></span> Reachable</span>
+            </div>
+            <div class="path-row">
+              <input type="checkbox" checked />
+              <div>
+                <strong>Extra UNC share</strong>
+                <code>\\cs01\logs\Horizon</code>
+              </div>
+              <span class="pill"><span class="dot warn"></span> Slow</span>
+            </div>
+
+            <div style="margin-top:14px; display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:end">
+              <label>
+                <span>Scan interval (seconds)</span>
+                <input type="number" value="60" min="15" step="15" />
+              </label>
+              <button class="primary" type="button">Save</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="panel" style="margin-bottom:12px">
+              <strong>Recent alerts</strong>
+            </div>
+
+            <div class="alert">
+              <div class="meta">Today 00:20:41 · Connection Server · error</div>
+              <div class="log">ERROR Broker: Unable to authenticate user — Connection Server LDAP timeout</div>
+              <div class="suggest">
+                <div>
+                  <h3>Location of Horizon View log files (1027744)</h3>
+                  <p>2025-04-01 · Connection Server and Agent log locations for Horizon.</p>
+                  <p style="margin-top:6px">Also: authentication / LDAP articles in the local archive.</p>
+                </div>
+                <button class="primary" type="button">Open in archive</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="meta" style="color:var(--teal); font-size:12px; margin-bottom:8px">Yesterday 23:11 · Blast Worker</div>
+              <div class="log" style="margin:0 0 10px">WARN Blast-Worker-SessionId2: session reconnect delayed</div>
+              <div class="suggest">
+                <div>
+                  <h3>No strong match</h3>
+                  <p>Search the archive manually for Blast / reconnect.</p>
+                </div>
+                <button class="ghost" type="button">Search the archive</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">Guardian reads the same library/archive.sqlite. The first stage does not change the environment. It raises an alert and points to an article.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll("nav.side button[data-view]");
+    const archive = document.getElementById("view-archive");
+    const guardian = document.getElementById("view-guardian");
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        button.classList.add("active");
+        const view = button.dataset.view;
+        archive.classList.toggle("hidden", view !== "archive");
+        guardian.classList.toggle("hidden", view !== "guardian");
+      });
+    });
+  </script>
+</body>
+</html>

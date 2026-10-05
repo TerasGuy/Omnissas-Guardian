@@ -10,9 +10,9 @@ if exist "dist\OmnissaGuardian.exe" (
   exit /b 0
 )
 if not exist .venv\Scripts\python.exe (
-  echo חסרה סביבת Python מקומית. התקינו לפי README.md
+  echo The local Python environment is missing. Install it using README.md.
   pause
   exit /b 1
 )
-echo פותח את Omnissa Guardian כחלון שולחני (לא דפדפן)...
+echo Opening Omnissa Guardian as a desktop window...
 start "Omnissa Guardian" .\.venv\Scripts\python -m omnissa_archive guardian --reader-url http://127.0.0.1:8765

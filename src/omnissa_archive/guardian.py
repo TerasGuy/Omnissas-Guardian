@@ -36,7 +36,7 @@ DEFAULT_LOG_TARGETS = [
     },
     {
         "id": "agent-user",
-        "label": "Agent (משתמש)",
+        "label": "Agent (user)",
         "path": r"%TEMP%\omnissa-%USERNAME%",
         "enabled": False,
     },
@@ -182,6 +182,57 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _as_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _clean_watch_targets(rows: list) -> list[dict]:
+    """Keep every saved watch path, including an empty list after the user removes them all."""
+    cleaned: list[dict] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(rows or [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        path = str(raw.get("path") or "").strip()
+        if not path:
+            continue
+        label = str(raw.get("label") or "").strip() or path
+        ident = str(raw.get("id") or "").strip() or f"path-{index}"
+        if ident in seen_ids:
+            ident = f"{ident}-{index}"
+        seen_ids.add(ident)
+        cleaned.append(
+            {
+                "id": ident,
+                "label": label,
+                "path": path,
+                "enabled": bool(raw.get("enabled", True)),
+            }
+        )
+    return cleaned
+
+
+def _merge_extra_paths(targets: list[dict], extras: list) -> list[dict]:
+    seen = {item.get("path") for item in targets}
+    merged = list(targets)
+    for raw in extras or []:
+        path = str(raw or "").strip()
+        if not path or path in seen:
+            continue
+        merged.append(
+            {
+                "id": f"extra-{len(merged) + 1}",
+                "label": "Extra path",
+                "path": path,
+                "enabled": True,
+            }
+        )
+        seen.add(path)
+    return merged
+
+
 class GuardianApp:
     def __init__(self, data_dir: Path, reader_base: str = "http://127.0.0.1:8765") -> None:
         self.data_dir = data_dir
@@ -217,16 +268,18 @@ class GuardianApp:
                 data = {}
         else:
             data = {}
-        targets = data.get("targets") or DEFAULT_LOG_TARGETS
-        extras = data.get("extra_paths") or []
-        lang = str(data.get("language") or "he")
+        if isinstance(data.get("targets"), list):
+            targets = _clean_watch_targets(data["targets"])
+        else:
+            targets = [dict(item) for item in DEFAULT_LOG_TARGETS]
+        targets = _merge_extra_paths(targets, data.get("extra_paths") or [])
         return {
             "interval_seconds": int(data.get("interval_seconds") or 60),
             "targets": targets,
-            "extra_paths": extras,
+            "extra_paths": [],
             # Desktop UX: start stopped until the operator clicks Start Monitoring.
             "running": bool(data.get("running", False)),
-            "language": lang if lang in ("he", "en") else "he",
+            "language": "en",
             "reader_base": str(data.get("reader_base") or self.reader_base),
             "online_search": bool(data.get("online_search", False)),
             "online_sources": self._online_sources_from(data.get("online_sources")),
@@ -272,7 +325,7 @@ class GuardianApp:
                 items.append((target.get("label") or target.get("id") or "log", target.get("path") or ""))
         for index, raw in enumerate(self.state.get("extra_paths") or [], start=1):
             if raw:
-                items.append((f"נתיב נוסף {index}", raw))
+                items.append((f"Extra path {index}", raw))
         return items
 
     def iter_log_files(self, raw: str) -> list[Path]:
@@ -294,19 +347,23 @@ class GuardianApp:
             return files
         return []
 
-    def scan_once(self) -> int:
+    def scan_once(self, *, stop_when_paused: bool = False) -> int:
         found = 0
         try:
             for label, raw in self.enabled_paths():
+                if stop_when_paused and not self.state.get("running"):
+                    break
                 for file_path in self.iter_log_files(raw):
-                    found += self._scan_file(label, file_path)
+                    if stop_when_paused and not self.state.get("running"):
+                        break
+                    found += self._scan_file(label, file_path, stop_when_paused=stop_when_paused)
             self.last_scan_at = _utcnow()
             self.last_scan_error = ""
         except OSError as exc:
             self.last_scan_error = str(exc)
         return found
 
-    def _scan_file(self, label: str, path: Path) -> int:
+    def _scan_file(self, label: str, path: Path, *, stop_when_paused: bool = False) -> int:
         key = str(path)
         try:
             size = path.stat().st_size
@@ -336,6 +393,8 @@ class GuardianApp:
             return 0
         self.offsets[key] = new_offset
         for line in chunk.splitlines():
+            if stop_when_paused and not self.state.get("running"):
+                break
             if not ERROR_RE.search(line):
                 continue
             alert = self._make_alert(label, path, line.strip())
@@ -352,18 +411,17 @@ class GuardianApp:
             self.system_log = self.system_log[:200]
 
     def language(self) -> str:
-        return "en" if self.state.get("language") == "en" else "he"
+        return "en"
 
     def set_language(self, lang: str) -> str:
-        self.state["language"] = "en" if str(lang).lower().startswith("en") else "he"
+        self.state["language"] = "en"
         self.save_config()
-        self._log_system(f"Language set to {self.state['language']}")
-        return self.state["language"]
+        return "en"
 
     def set_monitoring(self, enabled: bool) -> None:
-        self.state["running"] = bool(enabled)
+        self.state["running"] = _as_bool(enabled)
         self.save_config()
-        self._log_system("Monitoring started" if enabled else "Monitoring stopped")
+        self._log_system("Monitoring started" if self.state["running"] else "Monitoring stopped")
 
     def clear_alerts(self) -> None:
         with self._lock:
@@ -458,17 +516,35 @@ class GuardianApp:
             target["enabled"] = target.get("id") in enabled
         extra = (extra or "").strip()
         notice = "saved"
-        if extra and extra not in self.state["extra_paths"]:
-            self.state["extra_paths"].append(extra)
+        known = {item.get("path") for item in self.state["targets"]}
+        if extra and extra not in known:
+            self.state["targets"].append(
+                {
+                    "id": f"extra-{len(self.state['targets']) + 1}",
+                    "label": "Extra path",
+                    "path": extra,
+                    "enabled": True,
+                }
+            )
             notice = "extra_added"
         if reader_base is not None:
             base = reader_base.strip().rstrip("/")
             if base:
                 self.reader_base = base
                 self.state["reader_base"] = base
+        self.state["extra_paths"] = []
         self.save_config()
         self._log_system("Watch directories / settings updated")
         return notice
+
+    def set_watch_targets(self, rows: list, interval: int) -> str:
+        """Replace the watch list. Built-in paths are ordinary rows and can be edited or removed."""
+        self.state["targets"] = _clean_watch_targets(list(rows or []))
+        self.state["extra_paths"] = []
+        self.state["interval_seconds"] = max(15, int(interval or 60))
+        self.save_config()
+        self._log_system("Watch directories updated")
+        return "saved"
 
     def search_archive(self, query: str, limit: int = 8) -> list[dict]:
         conn = self._conn()
@@ -507,7 +583,7 @@ class GuardianApp:
         def loop() -> None:
             while not self._stop.is_set():
                 if self.state.get("running", False):
-                    self.scan_once()
+                    self.scan_once(stop_when_paused=True)
                 wait = max(15, int(self.state.get("interval_seconds") or 60))
                 self._stop.wait(wait)
 
@@ -522,28 +598,23 @@ class GuardianApp:
             alerts = list(self.alerts[:12])
         open_count = len(alerts)
         status_dot = "alert" if open_count else "ok"
-        status_text = f"{open_count} התראות" if open_count else "אין התראות פתוחות"
-        scan_text = self.last_scan_at or "עדיין לא"
+        status_text = f"{open_count} alerts" if open_count else "No open alerts"
+        scan_text = self.last_scan_at or "not yet"
         body_paths = []
         for target in self.state["targets"]:
             raw = target.get("path") or ""
             checked = " checked" if target.get("enabled") else ""
             status = path_status(raw)
+            ident = html.escape(str(target.get("id") or ""))
             body_paths.append(
                 '<div class="path-row">'
-                f'<input type="checkbox" name="enable_{html.escape(target["id"])}" value="1"{checked}>'
-                f"<div><strong>{html.escape(target.get('label') or '')}</strong>"
-                f"<code>{html.escape(raw)}</code></div>"
-                f'<span class="pill"><span class="dot {"ok" if status == "ok" else "warn"}"></span>{html.escape(status)}</span>'
+                f'<input type="checkbox" name="enable_{ident}" value="1"{checked}>'
+                "<div>"
+                f'<input type="text" name="label_{ident}" value="{html.escape(target.get("label") or "")}">'
+                f'<input type="text" name="path_{ident}" value="{html.escape(raw)}">'
                 "</div>"
-            )
-        for raw in self.state.get("extra_paths") or []:
-            status = path_status(raw)
-            body_paths.append(
-                '<div class="path-row">'
-                '<input type="checkbox" checked disabled>'
-                f"<div><strong>נתיב נוסף / UNC</strong><code>{html.escape(raw)}</code></div>"
                 f'<span class="pill"><span class="dot {"ok" if status == "ok" else "warn"}"></span>{html.escape(status)}</span>'
+                f'<label><input type="checkbox" name="remove_{ident}" value="1"> Remove</label>'
                 "</div>"
             )
         alert_html = []
@@ -554,65 +625,65 @@ class GuardianApp:
                 suggest = (
                     "<div class='suggest'>"
                     f"<div><h3>{html.escape(top['title'])}</h3>"
-                    f"<p>{html.escape(top['published_at'] or 'ללא תאריך')} · {html.escape(top['excerpt'][:180])}</p></div>"
-                    f"<a class='btn' href=\"{html.escape(top['reader_link'])}\" target='_blank' rel='noopener'>פתח בארכיון</a>"
+                    f"<p>{html.escape(top['published_at'] or 'No date')} · {html.escape(top['excerpt'][:180])}</p></div>"
+                    f"<a class='btn' href=\"{html.escape(top['reader_link'])}\" target='_blank' rel='noopener'>Open in archive</a>"
                     "</div>"
                 )
             else:
                 suggest = (
-                    "<div class='suggest'><div><h3>לא נמצאה התאמה חזקה</h3>"
-                    "<p>אפשר לחפש ידנית בארכיון.</p></div>"
-                    f"<a class='ghost' href=\"{html.escape(self.reader_base + '/search?q=' + quote(alert['line'][:80]))}\" target='_blank' rel='noopener'>חיפוש בארכיון</a></div>"
+                    "<div class='suggest'><div><h3>No strong match</h3>"
+                    "<p>Search the archive manually.</p></div>"
+                    f"<a class='ghost' href=\"{html.escape(self.reader_base + '/search?q=' + quote(alert['line'][:80]))}\" target='_blank' rel='noopener'>Search the archive</a></div>"
                 )
             alert_html.append(
                 f"<div class='alert'><div class='meta'>{html.escape(alert['at'])} · {html.escape(alert['label'])}</div>"
                 f"<div class='log'>{html.escape(alert['line'])}</div>{suggest}</div>"
             )
         if not alert_html:
-            alert_html.append('<div class="panel"><p class="note">עדיין אין התראות. הסריקה רצה ברקע.</p></div>')
+            alert_html.append('<div class="panel"><p class="note">No alerts yet. The scan runs in the background.</p></div>')
         running = self.state.get("running", False)
         page = f"""<!DOCTYPE html>
-<html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Omnissa Guardian</title><style>{PAGE_CSS}</style>
 <meta http-equiv="refresh" content="30"></head><body><div class="shell">
 <nav class="side">
   <a class="active" href="/">Guardian</a>
-  <a href="{html.escape(self.reader_base)}/" target="_blank" rel="noopener">ארכיון</a>
+  <a href="{html.escape(self.reader_base)}/" target="_blank" rel="noopener">Archive</a>
 </nav>
 <div class="content">
 <h1>Omnissa Guardian</h1>
-<p class="sub">ניטור לוגים מקומי ו־UNC · התראות · הצעת פתרון מהארכיון</p>
+<p class="sub">Local and UNC log monitoring · alerts · a suggested article from the archive</p>
 <div class="panel status-bar">
-  <span class="pill"><span class="dot {"ok" if running else "warn"}"></span>{"סריקה פעילה" if running else "סריקה מושהית"}</span>
-  <span class="pill">מרווח: {int(self.state.get("interval_seconds") or 60)} שניות</span>
-  <span class="pill">סריקה אחרונה: {html.escape(scan_text)}</span>
+  <span class="pill"><span class="dot {"ok" if running else "warn"}"></span>{"Scan running" if running else "Scan paused"}</span>
+  <span class="pill">Interval: {int(self.state.get("interval_seconds") or 60)} seconds</span>
+  <span class="pill">Last scan: {html.escape(scan_text)}</span>
   <span class="pill"><span class="dot {status_dot}"></span>{html.escape(status_text)}</span>
-  <span class="pill">מסד: {html.escape(self.database_path().name)}</span>
+  <span class="pill">Database: {html.escape(self.database_path().name)}</span>
 </div>
 <div class="grid-2">
   <div class="panel">
     <form method="post" action="/settings">
-      <div class="status-bar" style="margin-bottom:8px"><strong>מיקומי לוגים</strong></div>
-      <p class="note">ברירות מחדל לפי KB 1027744. אפשר להוסיף נתיב מקומי או UNC.</p>
+      <div class="status-bar" style="margin-bottom:8px"><strong>Log locations</strong></div>
+      <p class="note">Edit or remove any path, including the ones that come with the program. Add a local path or a UNC path.</p>
       {''.join(body_paths)}
       <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <label><span>מרווח סריקה (שניות)</span><input type="number" name="interval" min="15" step="15" value="{int(self.state.get('interval_seconds') or 60)}"></label>
-        <label><span>נתיב נוסף / UNC</span><input type="text" name="extra" placeholder="\\\\server\\share\\logs או C:\\logs"></label>
+        <label><span>Scan interval (seconds)</span><input type="number" name="interval" min="15" step="15" value="{int(self.state.get('interval_seconds') or 60)}"></label>
+        <label><span>Extra path / UNC</span><input type="text" name="extra" placeholder="\\\\server\\share\\logs or C:\\logs"></label>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button type="submit" name="action" value="save">שמירה</button>
-        <button type="submit" name="action" value="{"pause" if running else "resume"}">{"השהיה" if running else "המשך"}</button>
-        <button type="submit" name="action" value="scan">סריקה עכשיו</button>
+        <button type="submit" name="action" value="save">Save</button>
+        <button type="submit" name="action" value="{"pause" if running else "resume"}">{"Pause" if running else "Resume"}</button>
+        <button type="submit" name="action" value="scan">Scan now</button>
       </div>
     </form>
   </div>
   <div>
-    <div class="panel"><strong>התראות אחרונות</strong></div>
+    <div class="panel"><strong>Recent alerts</strong></div>
     {''.join(alert_html)}
   </div>
 </div>
-<p class="note">Guardian קורא את אותו מסד הארכיון. אין תיקון אוטומטי של הסביבה — רק התראה והכוונה למאמר.</p>
-{"<p class='note'>שגיאת סריקה: " + html.escape(self.last_scan_error) + "</p>" if self.last_scan_error else ""}
+<p class="note">Guardian reads the same archive database. It does not change the environment. It only raises an alert and points to an article.</p>
+{"<p class='note'>Scan error: " + html.escape(self.last_scan_error) + "</p>" if self.last_scan_error else ""}
 </div></div></body></html>"""
         return page.encode("utf-8")
 
@@ -620,21 +691,37 @@ class GuardianApp:
         action = (form.get("action") or ["save"])[0]
         if action == "pause":
             self.set_monitoring(False)
-            return "הסריקה הושהתה"
+            return "Scan paused"
         if action == "resume":
             self.set_monitoring(True)
-            return "הסריקה חודשה"
+            return "Scan resumed"
         if action == "scan":
             count = self.scan_once()
-            return f"נסרקו לוגים · {count} התראות חדשות"
+            return f"Logs scanned · {count} new alerts"
         try:
             interval = max(15, int((form.get("interval") or ["60"])[0]))
         except ValueError:
             interval = 60
-        enabled_ids = [key.removeprefix("enable_") for key in form if key.startswith("enable_")]
+        rows = []
+        for target in self.state["targets"]:
+            ident = str(target.get("id") or "")
+            if form.get(f"remove_{ident}"):
+                continue
+            label = ((form.get(f"label_{ident}") or [target.get("label") or ""])[0] or "").strip()
+            path = ((form.get(f"path_{ident}") or [target.get("path") or ""])[0] or "").strip()
+            rows.append(
+                {
+                    "id": ident,
+                    "label": label or path,
+                    "path": path,
+                    "enabled": bool(form.get(f"enable_{ident}")),
+                }
+            )
         extra = ((form.get("extra") or [""])[0] or "").strip()
-        self.update_watch_dirs(enabled_ids=enabled_ids, interval=interval, extra=extra)
-        return "ההגדרות נשמרו"
+        if extra:
+            rows.append({"id": "", "label": "Extra path", "path": extra, "enabled": True})
+        self.set_watch_targets(rows, interval)
+        return "Settings saved"
 
 
 def build_guardian_handler(app: GuardianApp):
@@ -644,7 +731,7 @@ def build_guardian_handler(app: GuardianApp):
                 body = app.home_page()
                 self._send(200, body, "text/html; charset=utf-8")
                 return
-            self._send(404, "לא נמצא".encode("utf-8"), "text/plain; charset=utf-8")
+            self._send(404, b"Not found", "text/plain; charset=utf-8")
 
         def do_POST(self) -> None:
             if urlparse(self.path).path != "/settings":

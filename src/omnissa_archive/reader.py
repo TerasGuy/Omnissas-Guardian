@@ -166,7 +166,7 @@ def _select(name: str, label: str, values: list[str], selected: str) -> str:
     pool = list(values)
     if selected and selected not in pool:
         pool.append(selected)
-    options = ['<option value="">הכל</option>']
+    options = ['<option value="">All</option>']
     for value in pool:
         mark = " selected" if value == selected else ""
         options.append(f'<option value="{html.escape(value)}"{mark}>{html.escape(value)}</option>')
@@ -303,7 +303,7 @@ def _layout(title: str, body: str, query: str = "", active: str = "", status: st
 
     status_html = f'<div class="status-strip">{status}</div>' if status else ""
     page = f"""<!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -313,17 +313,17 @@ def _layout(title: str, body: str, query: str = "", active: str = "", status: st
 <body>
 <div class="shell">
 <nav class="side">
-  {item("home", "/", "ראשי")}
-  {item("kb", "/kb", "מאמרי KB")}
-  {item("docs", "/docs", "מסמכי תיעוד")}
-  {item("settings", "/settings", "הגדרות")}
+  {item("home", "/", "Home")}
+  {item("kb", "/kb", "KB articles")}
+  {item("docs", "/docs", "Documentation")}
+  {item("settings", "/settings", "Settings")}
 </nav>
 <div class="content">
 <header>
-  <a href="/"><strong>ארכיון Omnissa</strong></a>
+  <a href="/"><strong>Omnissa Archive</strong></a>
   <form class="header" action="/search" method="get">
-    <input type="search" name="q" value="{html.escape(query)}" placeholder="חיפוש: error, תקלה, Horizon, מספר מאמר">
-    <button type="submit">חיפוש</button>
+    <input type="search" name="q" value="{html.escape(query)}" placeholder="Search: error, Horizon, article number">
+    <button type="submit">Search</button>
   </form>
   {status_html}
 </header>
@@ -336,21 +336,21 @@ def _layout(title: str, body: str, query: str = "", active: str = "", status: st
 
 
 def _source_label(source: str) -> str:
-    return "תיעוד" if source == "docs" else "מאגר ידע"
+    return "Documentation" if source == "docs" else "Knowledge base"
 
 
 def _cube(title: str, downloaded: int, discovered: int, rows: list[dict], kind: str) -> str:
     if rows:
         items = "".join(
-            f'<li><a href="/read/{row["id"]}">{html.escape(row["title"] or "ללא כותרת")}</a></li>'
+            f'<li><a href="/read/{row["id"]}">{html.escape(row["title"] or "Untitled")}</a></li>'
             for row in rows
         )
         listing = f"<ol>{items}</ol>"
     else:
-        listing = '<p class="empty">עדיין אין מסמכים.</p>'
+        listing = '<p class="empty">No documents yet.</p>'
     return (
         f'<section class="cube {kind}">'
-        f'<p class="kicker">{len(rows)} אחרונים · {downloaded:,} ירדו מתוך {discovered:,}</p>'
+        f'<p class="kicker">{len(rows)} latest · {downloaded:,} saved of {discovered:,}</p>'
         f"<h2>{html.escape(title)}</h2>"
         f"{listing}</section>"
     )
@@ -396,11 +396,11 @@ class ArchiveReader:
         self.refresh_library()
         current = self.database_path()
         pills = [
-            f'<span class="pill"><span class="dot"></span>מסד פעיל: {html.escape(current.name)}</span>'
+            f'<span class="pill"><span class="dot"></span>Active database: {html.escape(current.name)}</span>'
         ]
         if self.watcher.last_reload_at:
             pills.append(
-                f'<span class="pill"><span class="dot"></span>Live reload · {html.escape(self.watcher.last_reload_notice or "עודכן")}</span>'
+                f'<span class="pill"><span class="dot"></span>Live reload · {html.escape(self.watcher.last_reload_notice or "updated")}</span>'
             )
         return "".join(pills)
 
@@ -457,11 +457,11 @@ class ArchiveReader:
             conn.close()
         body = (
             '<section class="board">'
-            + _cube("מאמרי KB", counts.get("kb", 0), found.get("kb", 0), latest_kb, "kb")
-            + _cube("מסמכי תיעוד", counts.get("docs", 0), found.get("docs", 0), latest_docs, "docs")
+            + _cube("KB articles", counts.get("kb", 0), found.get("kb", 0), latest_kb, "kb")
+            + _cube("Documentation", counts.get("docs", 0), found.get("docs", 0), latest_docs, "docs")
             + "</section>"
         )
-        return self._page("ארכיון Omnissa", body, active="home")
+        return self._page("Omnissa Archive", body, active="home")
 
     def search_page(self, raw_query: str) -> bytes:
         terms = TOKEN_RE.findall(raw_query or "")
@@ -471,9 +471,9 @@ class ArchiveReader:
         finally:
             conn.close()
         if not terms:
-            body = "<p>כתבו מילה לחיפוש.</p>"
+            body = "<p>Type a word to search.</p>"
         elif not rows:
-            body = f"<p>אין תוצאות עבור <strong>{html.escape(raw_query)}</strong> במה שכבר ירד.</p>"
+            body = f"<p>No results for <strong>{html.escape(raw_query)}</strong> in what has already been saved.</p>"
         else:
             cards = []
             for row in rows:
@@ -484,8 +484,8 @@ class ArchiveReader:
                     f'<p>{_snippet_html(row["snippet"])}</p>'
                     "</div>"
                 )
-            body = f"<p>{len(rows)} תוצאות עבור <strong>{html.escape(raw_query)}</strong></p>" + "".join(cards)
-        return self._page(f"חיפוש: {raw_query}", body, raw_query, active="search")
+            body = f"<p>{len(rows)} results for <strong>{html.escape(raw_query)}</strong></p>" + "".join(cards)
+        return self._page(f"Search: {raw_query}", body, raw_query, active="search")
 
     def read_page(self, document_id: int, raw_query: str) -> bytes | None:
         conn = self._conn()
@@ -506,7 +506,7 @@ class ArchiveReader:
             f'<p class="meta">{html.escape(facts)} · {html.escape(page_url)}</p>'
             f'<article dir="auto">{article}</article>'
         )
-        return self._page(title or "מסמך", body, raw_query, active=source)
+        return self._page(title or "Document", body, raw_query, active=source)
 
     def catalog_page(self, source: str, filters: dict[str, str], page: int) -> bytes:
         page = max(1, page)
@@ -557,7 +557,7 @@ class ArchiveReader:
             ).fetchall()
         finally:
             conn.close()
-        title = "מאמרי KB" if source == "kb" else "מסמכי תיעוד"
+        title = "KB articles" if source == "kb" else "Documentation"
         base = "/kb" if source == "kb" else "/docs"
         options = {
             "family": _facet_tokens(facet_rows, "product_family"),
@@ -575,38 +575,38 @@ class ArchiveReader:
                 "<tr>"
                 f'<td class="when">{published}</td>'
                 f'<td class="kbnum">{kb_cell}</td>'
-                f'<td class="topic"><a dir="auto" href="/read/{row["id"]}">{html.escape(row["title"] or "ללא כותרת")}</a></td>'
+                f'<td class="topic"><a href="/read/{row["id"]}">{html.escape(row["title"] or "Untitled")}</a></td>'
                 f'<td class="kind">{category}</td>'
                 "</tr>"
             )
         start = 0 if total == 0 else (page - 1) * 40 + 1
         end = (page - 1) * 40 + len(rows)
         pages = max(1, (total + 39) // 40)
-        prev_link = f'<a href="{base}{_filter_query(chosen, page - 1)}">הקודם</a>' if page > 1 else ""
-        next_link = f'<a href="{base}{_filter_query(chosen, page + 1)}">הבא</a>' if page < pages else ""
+        prev_link = f'<a href="{base}{_filter_query(chosen, page - 1)}">Previous</a>' if page > 1 else ""
+        next_link = f'<a href="{base}{_filter_query(chosen, page + 1)}">Next</a>' if page < pages else ""
         listing = (
-            '<div class="table-wrap"><table class="archive" dir="rtl">'
-            "<thead><tr><th>תאריך</th><th>מספר KB</th><th>נושא</th><th>קטגוריה</th></tr></thead>"
+            '<div class="table-wrap"><table class="archive">'
+            "<thead><tr><th>Date</th><th>KB number</th><th>Subject</th><th>Category</th></tr></thead>"
             f"<tbody>{''.join(body_rows)}</tbody></table></div>"
             if body_rows
-            else '<p class="empty">אין פריטים שתואמים לסינון.</p>'
+            else '<p class="empty">Nothing matches these filters.</p>'
         )
         body = (
             f"<h2>{title}</h2>"
-            f'<form class="filters" action="{base}" method="get" dir="rtl">'
+            f'<form class="filters" action="{base}" method="get">'
             f'<div class="filter-grid">'
-            f"{_select('family', 'משפחת מוצר', options['family'], chosen['family'])}"
-            f"{_select('product', 'מוצר', options['product'], chosen['product'])}"
-            f"{_select('version', 'גרסה', options['version'], chosen['version'])}"
-            f"{_select('category', 'קטגוריה', options['category'], chosen['category'])}"
-            f'<label><span>מתאריך</span><input type="date" name="from" value="{html.escape(chosen["from"])}"></label>'
-            f'<label><span>עד תאריך</span><input type="date" name="to" value="{html.escape(chosen["to"])}"></label>'
-            f'<div class="filter-actions"><button type="submit">סינון</button>'
-            f'<a class="clear" href="{base}">ניקוי</a></div>'
+            f"{_select('family', 'Product family', options['family'], chosen['family'])}"
+            f"{_select('product', 'Product', options['product'], chosen['product'])}"
+            f"{_select('version', 'Version', options['version'], chosen['version'])}"
+            f"{_select('category', 'Category', options['category'], chosen['category'])}"
+            f'<label><span>From</span><input type="date" name="from" value="{html.escape(chosen["from"])}"></label>'
+            f'<label><span>To</span><input type="date" name="to" value="{html.escape(chosen["to"])}"></label>'
+            f'<div class="filter-actions"><button type="submit">Filter</button>'
+            f'<a class="clear" href="{base}">Clear</a></div>'
             f"</div></form>"
-            f'<p class="meta">מציג {start}–{end} מתוך {total:,}</p>'
+            f'<p class="meta">Showing {start}–{end} of {total:,}</p>'
             f"{listing}"
-            f'<p class="pager">{prev_link}<span>עמוד {page} מתוך {pages}</span>{next_link}</p>'
+            f'<p class="pager">{prev_link}<span>Page {page} of {pages}</span>{next_link}</p>'
         )
         return self._page(title, body, active=source)
 
@@ -616,32 +616,32 @@ class ArchiveReader:
         reload_note = ""
         if self.watcher.last_reload_at:
             reload_note = (
-                f'<p class="meta">Live reload אחרון: {html.escape(self.watcher.last_reload_at)} · '
+                f'<p class="meta">Last live reload: {html.escape(self.watcher.last_reload_at)} · '
                 f"{html.escape(self.watcher.last_reload_notice)}</p>"
             )
         body = (
             '<section class="settings">'
-            "<h2>הגדרות</h2>"
+            "<h2>Settings</h2>"
             f"{note}"
             f"{reload_note}"
-            f'<p>המסד שהקורא פותח עכשיו:</p><p class="meta">{html.escape(str(current))}</p>'
-            "<p>חבילת לקוח: שימו <span class=\"meta\">library/archive.sqlite</span> ו־"
-            "<span class=\"meta\">assets/</span>. עדכון חודשי אפשר לשים ב־"
-            "<span class=\"meta\">library/inbox/</span> — ייטען אוטומטית בלי ריסטארט.</p>"
+            f'<p>The database this reader is using:</p><p class="meta">{html.escape(str(current))}</p>'
+            "<p>Customer package: keep <span class=\"meta\">library/archive.sqlite</span> and "
+            "<span class=\"meta\">assets/</span>. For a monthly update, put the new file in "
+            "<span class=\"meta\">library/inbox/</span>. It loads without a restart.</p>"
             '<form method="post" action="/settings" enctype="multipart/form-data">'
             '<input type="file" name="database" accept=".sqlite,.db" required>'
-            '<button type="submit">טעינת מסד</button></form>'
+            '<button type="submit">Load database</button></form>'
             '<form method="post" action="/settings">'
             '<input type="hidden" name="use" value="archive">'
-            '<button type="submit">חזרה למסד ההורדה</button></form>'
+            '<button type="submit">Use the download database</button></form>'
             "</section>"
         )
-        return self._page("הגדרות", body, active="settings")
+        return self._page("Settings", body, active="settings")
 
     def install_database(self, filename: str, payload: bytes) -> str:
         target = install_uploaded_database(self.data_dir, filename, payload)
         self._write_database_path(target)
-        self.watcher.last_reload_notice = f"המסד נטען: {target.name}"
+        self.watcher.last_reload_notice = f"Database loaded: {target.name}"
         self.watcher.last_reload_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         return str(target)
 
@@ -650,11 +650,11 @@ class ArchiveReader:
 
     def missing_page(self, url: str) -> bytes:
         body = (
-            "<div class='card'><p>העמוד הזה עוד לא נמצא בארכיון המקומי.</p>"
+            "<div class='card'><p>This page is not in the local archive yet.</p>"
             f"<p class='meta'>{html.escape(url)}</p>"
-            "<p>אחרי שפקודת ההורדה תביא אותו, הקישור ייפתח כאן.</p></div>"
+            "<p>After the download brings it in, the link will open here.</p></div>"
         )
-        return self._page("עדיין לא בארכיון", body, active="")
+        return self._page("Not in the archive yet", body, active="")
 
     def asset(self, name: str) -> tuple[bytes, str] | None:
         safe_name = Path(name).name
@@ -723,11 +723,11 @@ def build_handler(data_dir: Path):
             if parsed.path.startswith("/read/"):
                 id_text = parsed.path.removeprefix("/read/").strip("/")
                 if not id_text.isdigit():
-                    self._send(404, _layout("לא נמצא", "<p>מסמך לא נמצא.</p>"), "text/html; charset=utf-8")
+                    self._send(404, _layout("Not found", "<p>Document not found.</p>"), "text/html; charset=utf-8")
                     return
                 page = reader.read_page(int(id_text), raw_query)
                 if page is None:
-                    self._send(404, _layout("לא נמצא", "<p>מסמך לא נמצא.</p>"), "text/html; charset=utf-8")
+                    self._send(404, _layout("Not found", "<p>Document not found.</p>"), "text/html; charset=utf-8")
                     return
                 self._send(200, page, "text/html; charset=utf-8")
                 return
@@ -743,7 +743,7 @@ def build_handler(data_dir: Path):
                 body, content_type = found
                 self._send(200, body, content_type)
                 return
-            self._send(404, _layout("לא נמצא", "<p>הדף לא נמצא.</p>"), "text/html; charset=utf-8")
+            self._send(404, _layout("Not found", "<p>Page not found.</p>"), "text/html; charset=utf-8")
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
@@ -753,18 +753,18 @@ def build_handler(data_dir: Path):
             length = int(self.headers.get("Content-Length", "0") or "0")
             payload = self.rfile.read(length)
             content_type = self.headers.get("Content-Type", "")
-            notice = "המסד לא הוחלף"
+            notice = "The database was not replaced"
             try:
                 if content_type.startswith("multipart/form-data"):
                     files = _parse_multipart(content_type, payload)
                     filename, data = files.get("database", ("", b""))
                     saved = reader.install_database(filename, data)
-                    notice = f"המסד נטען: {saved}"
+                    notice = f"Database loaded: {saved}"
                 else:
                     form = parse_qs(payload.decode("utf-8", errors="replace"))
                     if form.get("use", [""])[0] == "archive":
                         reader.use_download_database()
-                        notice = "הקורא חזר למסד ההורדה"
+                        notice = "The reader is using the download database"
             except ValueError as exc:
                 notice = str(exc)
             self.send_response(303)
@@ -773,11 +773,14 @@ def build_handler(data_dir: Path):
             self.end_headers()
 
         def _send(self, status: int, body: bytes, content_type: str) -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                return
 
         def log_message(self, fmt: str, *args) -> None:
             return

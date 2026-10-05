@@ -41,7 +41,7 @@ def test_live_reload_promotes_inbox_database(tmp_path: Path):
     event = watcher.poll(live)
     assert event is not None
     assert event.path == live
-    assert "תיבה" in event.notice
+    assert "inbox" in event.notice
     assert not newer.exists()
 
 

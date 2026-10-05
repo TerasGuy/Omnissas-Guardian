@@ -1,29 +1,31 @@
-# מפרט: Omnissa Archive ו־Omnissa Guardian
+# Specification: Omnissa Archive and Omnissa Guardian
 
-תאריך מקורי: 2026-09-25  
-עודכן: 2026-09-28  
-סטטוס: מיושם  
-מרחב: `C:\GitHub\Omnissas Guardian`
+Original date: 2026-09-25  
+Updated: 2026-10-05  
+Status: implemented  
+Workspace: `C:\GitHub\Omnissas Guardian`
 
-## 1. מטרה
+## 1. Purpose
 
-עותק מקומי של התיעוד הציבורי באנגלית מ־docs.omnissa.com ושל מאמרי kb.omnissa.com, לאתרים בלי אינטרנט. התוכן נשאר של Omnissa. זה לא אתר מראה ציבורי.
+A local copy of the public English documentation from docs.omnissa.com and of articles from kb.omnissa.com, for sites without internet. The content remains Omnissa's. This is not a public mirror.
 
-שני שימושים על אותו מסד:
+Two uses of the same database:
 
-| שימוש | מי מפעיל | מה קורה |
+| Use | Who runs it | What happens |
 |---|---|---|
-| הורדת התוכן | מי שמכין את המסד | `discover` / `fetch` / `refresh` כותבים ל־SQLite ולתיקיית תמונות |
-| שימוש אצל הלקוח | מנהל סביבה | חלון Guardian סורק לוג, משווה שגיאה למסד, ופותח את הארכיון מקומית |
+| Downloading the content | Whoever prepares the database | `discover` / `fetch` / `refresh` write to SQLite and to the image folder |
+| Use at a customer site | An environment administrator | The Guardian window scans a log, matches an error to the database, and opens the archive locally |
 
-המטרה המרכזית של Guardian: נתיב לוג, מקומי או UNC, נכנס. שורת שגיאה מושוות למאמרי ה־KB שנשמרו אצלו. חיפוש באתרים הציבוריים הוא תוספת ידנית, כבויה כברירת מחדל, ולא חלק מהסריקה.
+Guardian's main purpose: a log path, local or UNC, comes in. An error line is matched to the KB articles stored locally. Search on public sites is a manual extra, off by default, and not part of the scan.
 
-## 2. הפצה ללקוח
+The archive and the Guardian window are English only, left to right. There is no language toggle.
 
-ללקוח אין BAT ואין Python.
+## 2. Customer delivery
 
-פעם ראשונה: `dist\OmnissaGuardianSetup.exe`  
-ההתקנה פורסת:
+A customer has no BAT files and no Python.
+
+First time: `dist\OmnissaGuardianSetup.exe`  
+The installer lays out:
 
 ```
 {autopf}\Omnissa Guardian\
@@ -36,74 +38,78 @@
     assets\
 ```
 
-ה־EXE נושא את אייקון המגן (`assets\omnissa-guardian.ico`): רקע `#2c2c3e`, מגן `#f07a58`, סימן `#e8b545`. האייקון מופיע על הקובץ, על קיצור הדרך, ועל החלון.
+The setup wizard is English.
 
-לחיצה על הקיצור פותחת את חלון הניטור ומפעילה את שרת הארכיון על `127.0.0.1:8765` בלבד. מחשבים אחרים ברשת לא ניגשים אליו.
+The EXE carries the shield icon (`assets\omnissa-guardian.ico`): background `#2c2c3e`, shield `#f07a58`, mark `#e8b545`. The icon is on the file, on the shortcut, and on the window.
 
-פעם בחודש, במחשב שמכין את המסד:
+Clicking the shortcut opens the monitoring window and starts the archive server on `127.0.0.1:8765` only. Other computers on the network cannot reach it.
+
+`dist\OmnissaGuardian` is the preliminary test copy. It is opened without running the installer. Its database is `dist\OmnissaGuardian\data\library\archive.sqlite`. An empty `data\archive.sqlite` beside the EXE is not the archive.
+
+Once a month, on the computer that prepares the database:
 
 ```powershell
 .\.venv\Scripts\python -m omnissa_archive refresh
 .\.venv\Scripts\python installer\stage_library.py
 ```
 
-`refresh` קורא מחדש את מפות האתר ומוריד רק כתובת חדשה או כתובת שהתאריך שלה השתנה. `stage_library.py` כותב עותק עקבי אל `dist\package-staging\archive.sqlite`, בלי קובץ WAL פתוח באמצע.
+`refresh` reads the sitemaps again and downloads only a new address or an address whose date changed. `stage_library.py` writes a consistent copy to `dist\package-staging\archive.sqlite`, without an open WAL file in the middle.
 
-הלקוח שם את `archive.sqlite` החדש ב־`data\library\inbox\`. הקובץ נבדק (חתימת SQLite וטבלת `documents`), מועתק אל `data\library\archive.sqlite`, והקודם נשמר ב־`data\libraries\`. אין התקנה מחדש ואין סגירת התוכנה. תמונות חדשות מגיעות יחד עם עדכון של `data\assets\`.
+The customer places the new `archive.sqlite` in `data\library\inbox\`. The file is checked (SQLite signature and a `documents` table), copied to `data\library\archive.sqlite`, and the previous file is kept under `data\libraries\`. There is no reinstall and the program does not have to be closed. New images arrive with an update of `data\assets\`.
 
-התקנה חוזרת לא דורסת מסד שכבר קיים. הסרה לא מוחקת את המסד ואת התמונות.
+A repeated install does not overwrite a database that already exists. Uninstall does not delete the database or the images.
 
-קובץ HTML יחיד לכל הארכיון לא מתאים: המסד והתמונות גדולים ממנו. חבילת `python -m omnissa_archive package` עדיין מייצרת תיקיית עותק פנימית `dist\Omnissa-Archive\`. זו לא החבילה שהלקוח מתקין.
+One HTML file for the whole archive is not suitable: the database and the images are larger than that. `python -m omnissa_archive package` still produces an internal copy folder `dist\Omnissa-Archive\`. That is not the package the customer installs.
 
-בניית ההתקנה:
+Building the installer:
 
 ```powershell
 .\.venv\Scripts\python installer\stage_library.py
-.\.venv\Scripts\pyinstaller build\pyinstaller\OmnissaGuardian.spec --noconfirm --distpath dist --workpath build\pyinstaller
+.\.venv\Scripts\python -m PyInstaller build\pyinstaller\OmnissaGuardian.spec --noconfirm --distpath dist --workpath build\pyinstaller
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\OmnissaGuardian.iss
 ```
 
-`stage_library.py` מעתיק את המסד החי בעותק עקבי, בלי קובץ WAL פתוח באמצע.
+`stage_library.py` copies the live database as a consistent snapshot, without an open WAL file in the middle. After the EXE is rebuilt, the same snapshot is placed at `dist\OmnissaGuardian\data\library\archive.sqlite` for the test folder.
 
-## 3. ארכיון
+## 3. Archive
 
-ממשק מקומי בעברית, כיוון RTL.
+Local interface in English, left to right.
 
-- תפריט צד: ראשי, מאמרי KB, מסמכים, הגדרות
-- בית: שתי קוביות, חמישה KB אחרונים וחמישה מסמכים אחרונים
-- טבלה: תאריך, מספר KB, נושא, קטגוריה (משפחה · מוצר · גרסה · קטגוריה)
-- סינון: משפחת מוצר, מוצר, גרסה, קטגוריה, מתאריך עד תאריך. מוצר וגרסה יכולים להיות רשימה מופרדת בפסיקים
-- חיפוש FTS על הכותרת והטקסט
-- הגדרות: טעינת מסד SQLite
+- Side menu: Home, KB articles, Documentation, Settings
+- Home: two cubes, the five latest KB articles and the five latest documents
+- Table: Date, KB number, Subject, Category (family · product · version · category)
+- Filters: product family, product, version, category, from date, to date. Product and version may be a comma-separated list
+- FTS search on the title and the text
+- Settings: load a SQLite database
 
-פלטה: `#2c2c3e`, `#f07a58`, `#365565`, `#4d889d`, `#e8b545`, `#bebec6`.
+Palette: `#2c2c3e`, `#f07a58`, `#365565`, `#4d889d`, `#e8b545`, `#bebec6`.
 
-תאריך פרסום במסמכי docs הוא `omnissa-datecreated`. ב־KB הוא `article:published_time`. הטקסט `Last updated:` בתחילת מאמר KB הוא תאריך העדכון שנשמר ב־`updated_at`.
+The publication date on docs pages is `omnissa-datecreated`. On KB it is `article:published_time`. The text `Last updated:` at the start of a KB article is the update date stored in `updated_at`.
 
 ## 4. Guardian
 
-חלון כהה בסגנון קונסולת ניטור, עם עברית ואנגלית. השפה נשמרת ב־`data\guardian_config.json`.
+A dark window in the style of a monitoring console. English only. Settings are stored in `data\guardian_config.json`. Language is not a setting.
 
-נתיבי ברירת מחדל מתוך KB 1027744 (מיקום לוגי Horizon). הם נכונים כשהתהליך רץ על אותו שרת. משרת עם גישת SMB מדביקים UNC, למשל `\\host\C$\ProgramData\Omnissa\Horizon\logs`. החשבון שמריץ את התוכנה הוא החשבון שקורא את השיתוף. סיסמה לא נשמרת בתוכנה.
+Default paths come from KB 1027744 (Horizon log locations). They are correct when the process runs on that server. From a server with SMB access, paste a UNC path, for example `\\host\C$\ProgramData\Omnissa\Horizon\logs`. The account that runs the program is the account that reads the share. A password is not stored in the program.
 
-סריקה:
+Scan:
 
-- מרווח ברירת מחדל 60 שניות, מינימום 15
-- הסריקה הראשונה של קובץ קוראת את התוכן שכבר קיים. מעל 2MB נקראים שני המגה־בייט האחרונים
-- אחר כך נקרא רק מה שהתווסף
-- שורה מזוהה לפי error, exception, failed, failure, fatal, critical, warning
-- החיפוש שולף מילים מהשורה, מוריד מילות רעש, ומדרג מאמרים ב־FTS
-- ההתראה מציגה כותרת, תאריך, קטע, וקישור `/read/{id}` בארכיון המקומי
+- Default interval 60 seconds, minimum 15
+- The first scan of a file reads the content already there. Above 2MB, the last two megabytes are read
+- After that, only what was appended is read
+- A line is detected by error, exception, failed, failure, fatal, critical, warning
+- The search takes words from the line, drops noise words, and ranks articles with FTS
+- The alert shows a title, a date, an excerpt, and a `/read/{id}` link in the local archive
 
-Guardian קורא את אותו מסד. תיבת `inbox` נבדקת גם ממנו, לא רק ממסך הארכיון.
+Guardian reads the same database. The `inbox` folder is checked from Guardian as well, not only from the archive screen.
 
-החלון: ניטור חי, היסטוריה, תיקיות מעקב, מקורות KB, הגדרות, דוא״ל, יומן מערכת. עברית ואנגלית. לשונית הדוא״ל לא שולחת הודעות. הזיהויים נשארים במחשב.
+The window: Live Monitor, History, Watch Dirs, KB Sources, Settings, Email, System Log. The Email tab does not send messages. Detections stay on the computer.
 
-### מסמכים אונליין
+### Online documents
 
-בלשונית מקורות KB נשאר אזור חיפוש בדפדפן, עם התבניות מהקליינט הקודם:
+The KB Sources tab keeps a browser-search area, with the templates from the previous client:
 
-| שם | תבנית |
+| Name | Template |
 |---|---|
 | Omnissa KB | `https://kb.omnissa.com/s/global-search/{q}` |
 | Omnissa TechZone | `https://techzone.omnissa.com/search#q={q}` |
@@ -112,29 +118,29 @@ Guardian קורא את אותו מסד. תיבת `inbox` נבדקת גם ממנ�
 | Reddit r/vmware | `https://www.reddit.com/r/vmware/search/?q={q}` |
 | Google | `https://www.google.com/search?q=Omnissa+Horizon+{q}` |
 
-`{q}` הוא טקסט השגיאה, עד 200 תווים, אחרי קידוד לכתובת.
+`{q}` is the error text, up to 200 characters, after URL encoding.
 
-האזור מוצג תמיד. הוא לא נבדק בסריקת הלוג.
+The area is always shown. It is not checked during the log scan.
 
-בהגדרות יש תיבה **חיפוש במסמכים אונליין**. היא נשמרת כ־`online_search` ב־`data\guardian_config.json`, וכבויה כברירת מחדל. בלי הסימון, לחיצה על **חיפוש אונליין** לא פונה לרשת.
+Settings has a **Search online documents** checkbox. It is stored as `online_search` in `data\guardian_config.json`, and it is off by default. Without the check, clicking **Search online** does not use the network.
 
-כשהתיבה מסומנת, לחיצה על **חיפוש אונליין** (בלשונית או מתוך פירוט זיהוי) בודקת קודם חיבור TCP קצר אל `kb.omnissa.com` בפורט 443. אם החיבור נכשל, לא נפתח דפדפן והחיפוש נשאר על הארכיון המקומי. אם החיבור הצליח, נפתח חיפוש לכל תבנית.
+When the box is checked, clicking **Search online** (on the tab or from a detection detail) first tries a short TCP connection to `kb.omnissa.com` on port 443. If the connection fails, no browser opens and the search stays on the local archive. If the connection succeeds, a search opens for each template.
 
-לא כלול: שליחה לענן, סוכן על כל תחנה, תיקון אוטומטי, חבילת אבחון לספק, או פנייה אוטומטית לאתרי Omnissa בזמן סריקה.
+Not included: sending to the cloud, an agent on every workstation, automatic repair, a diagnostic package for a vendor, or an automatic request to Omnissa sites during a scan.
 
-## 5. הוראה והמשך אחרי עצירה
+## 5. Download and resume after a stop
 
-מקורות:
+Sources:
 
-- docs: אינדקס sitemap, דפי אנגלית בלי קידומת שפה. גוף העמוד הוא `article .doc-body`. מטא־נתונים נקראים מהעמוד המלא.
-- KB: רשימת SitemapGeneratorVF. המאמר מרונדר ב־Chrome דרך Playwright עד ש־`#article_content` ו־`article:published_time` מופיעים. מאמר שכבר לא זמין לא מנוסה שוב.
+- docs: a sitemap index, English pages without a language prefix. The page body is `article .doc-body`. Metadata is read from the full page.
+- KB: the SitemapGeneratorVF list. The article is rendered in Chrome through Playwright until `#article_content` and `article:published_time` appear. An article that is no longer available is not tried again.
 
-התור ב־`crawl_queue`: `pending`, `running`, `done`, `error`.  
-`fetch` מחזיר `running` שנקטע אל `pending`, ומדלג על `done`. עד שלושה ניסיונות לשגיאה.
+The queue in `crawl_queue`: `pending`, `running`, `done`, `error`.  
+`fetch` returns an interrupted `running` row to `pending`, and skips `done`. Up to three attempts for an error.
 
-`refresh` הוא העדכון התקופתי: קודם `discover`, אחר כך `fetch`. `Open-Download.bat` מריץ רק `fetch`. הוא ממשיך תור קיים ולא קורא מחדש את מפות האתר, ולכן הוא לא העדכון החודשי.
+`refresh` is the periodic update: `discover` first, then `fetch`. `Open-Download.bat` runs only `fetch`. It continues an existing queue and does not read the sitemaps again, so it is not the monthly update.
 
-בשלב מפות האתר כל שורה היא סיכום, בלי זמן ובלי כותרת:
+During the sitemap phase every line is a summary, with no time and no title:
 
 ```text
 docs sitemap-0001.xml english=65 new=0
@@ -142,43 +148,44 @@ docs revisions stamped=… changed=…
 kb sitemap articles=… new=… stamped=… changed=…
 ```
 
-`english` ו־`articles` הם כמה כתובות נמצאו במפה. `new` הוא כמה מהן לא היו בתור. `changed` הוא כמה כתובות שה־`lastmod` שלהן השתנה וחזרו אל `pending`.
+`english` and `articles` are how many addresses were found in the map. `new` is how many of them were not already in the queue. `changed` is how many addresses had a changed `lastmod` and returned to `pending`.
 
-`lastmod` של המפה נשמר בנפרד. בשמירה, אם `Last updated` זהה, גוף העמוד לא נכתב מחדש.
+The map `lastmod` is stored separately. On save, if `Last updated` is the same, the page body is not written again.
 
-שורת לוג של הורדה מופיעה רק אחר כך, ורק לעמוד שבאמת יורד:
+A download log line appears only later, and only for a page that is actually downloaded:
 
 ```text
-YYYY-MM-DD HH:MM:SS docs|kb n/total KB id|— | כותרת או סטטוס | saved=… done=… pending=… running=… error=…
+YYYY-MM-DD HH:MM:SS docs|kb n/total KB id|— | title or status | saved=… done=… pending=… running=… error=…
 ```
 
-הזמן הוא השעון המקומי.
+The time is the local clock.
 
-קצב מנומס: בערך 3 בקשות בשנייה לתיעוד, ומאמר KB אחד בכל פעם עם השהיה. `robots.txt` נשמר: אין `/api/` ואין `/search` בתיעוד, וב־KB אין `/articles/`. המאמרים עצמם נלקחים מ־`/s/article/`.
+Polite rate: about 3 requests per second for documentation, and one KB article at a time with a pause. `robots.txt` is respected: no `/api/` and no `/search` for documentation, and no `/articles/` for KB. The articles themselves are taken from `/s/article/`.
 
-## 6. אחסון
+## 6. Storage
 
-SQLite עם WAL ו־FTS5 על כותרת וטקסט.
+SQLite with WAL and FTS5 on title and text.
 
-`documents`: מקור, כתובת, כותרת, גוף, hash, מוצר, משפחה, גרסה, קטגוריה, תאריך פרסום, תאריך עדכון, `sitemap_lastmod`.  
-`crawl_queue`: כתובת, סטטוס, ניסיונות, `remote_lastmod`.  
-תמונות ו־PDF ב־`data\assets\`, וה־HTML המקומי מצביע אליהן.
+`documents`: source, address, title, body, hash, product, family, version, category, publication date, update date, `sitemap_lastmod`.  
+`crawl_queue`: address, status, attempts, `remote_lastmod`.  
+Images and PDFs are in `data\assets\`, and the local HTML points to them.
 
-במחשב הפיתוח המסד החי הוא `data\archive.sqlite`. אצל הלקוח הוא `data\library\archive.sqlite`.
+On the development computer the live database is `data\archive.sqlite`. At a customer site it is `data\library\archive.sqlite`. The test folder uses that same customer path under `dist\OmnissaGuardian\data\library\archive.sqlite`.
 
-## 7. העברה למחשב אחר
+## 7. Moving to another computer
 
-`data\`, `.venv\`, `build\` ו־`dist\` לא נכנסים ל־Git. הקוד כן.
+`data\`, `.venv\`, `build\`, and `dist\` are not in Git. The code is.
 
-כדי להמשיך הורדה במחשב חדש מעתיקים את `data\archive.sqlite` אחרי `PRAGMA wal_checkpoint(TRUNCATE)`, ואת `data\assets\`. בלי המסד התור ריק. אחר כך יוצרים `.venv` מחדש עם Python המקומי ומריצים `refresh` או `fetch`. פירוט הפקודות ב־`README.md`.
+To continue a download on a new computer, copy `data\archive.sqlite` after `PRAGMA wal_checkpoint(TRUNCATE)`, and `data\assets\`. Without the database the queue is empty. Then create a new `.venv` with the local Python and run `refresh` or `fetch`. The commands are in `README.md`.
 
-`.venv` שהועתק ממחשב או ממשתמש אחר לא שמיש. `pyvenv.cfg` שומר את נתיב ה־Python שיצר אותו, וההתקנה הניתנת לעריכה שומרת את נתיב קוד המקור. במחשב החדש יוצרים סביבה חדשה.
+A `.venv` copied from another computer or another user is not usable. `pyvenv.cfg` stores the path of the Python that created it, and the editable install stores the source path. On the new computer, create a new environment.
 
-## 8. הצלחה
+## 8. Success
 
-- לקוח מתקין מקובץ אחד, בלי Python, ורואה את האייקון על קובץ התוכנה.
-- החלפת מסד חודשית נטענת בלי ריסטארט.
-- נתיב UNC עם שגיאה קיימת בלוג מציג מאמר מהמסד המקומי כבר בסריקה הראשונה.
-- הורדה שנעצרת באמצע ממשיכה מהתור במחשב הזה או במחשב שאליו הועתק `data\`.
-- עדכון חודשי עם `refresh` מדפיס קודם סיכומי מפות אתר. שורות עם זמן וכותרת מופיעות רק לעמודים שהשתנו או שנוספו.
-- סריקת לוג לא פונה לאתרי Omnissa. חיפוש אונליין נפתח רק אחרי סימון בהגדרות, לחיצה מפורשת, וחיבור אל `kb.omnissa.com`.
+- A customer installs from one file, without Python, and sees the icon on the program file.
+- A monthly database replacement loads without a restart.
+- A UNC path with an error already in the log shows an article from the local database on the first scan.
+- A download that stops in the middle continues from the queue on this computer or on a computer that received `data\`.
+- A monthly update with `refresh` prints sitemap summaries first. Lines with a time and a title appear only for pages that changed or were added.
+- A log scan does not contact Omnissa sites. Online search opens only after the setting is checked, an explicit click, and a connection to `kb.omnissa.com`.
+- The test folder `dist\OmnissaGuardian` shows the same English interface and the staged database, without running the installer.

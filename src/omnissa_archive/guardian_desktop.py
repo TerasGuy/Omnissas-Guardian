@@ -11,7 +11,7 @@ from omnissa_archive.guardian_i18n import STRINGS, normalize_lang, t
 _ICON = Path(__file__).resolve().parents[2] / "assets" / "omnissa-guardian.ico"
 
 DESKTOP_HTML = r"""<!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <title>Omnissa Guardian Ultimate</title>
@@ -89,6 +89,23 @@ tr:hover td { background:#1f2330; cursor:pointer; }
 .hint { color:var(--muted); font-size:12px; margin-top:10px; }
 .path-row { display:grid; grid-template-columns:28px 1fr auto; gap:10px; align-items:start;
   padding:10px 0; border-bottom:1px solid var(--line); }
+.watch-row { display:grid; grid-template-columns:22px minmax(0,1fr) auto auto; gap:10px; align-items:center;
+  padding:8px 4px; border-bottom:1px solid var(--line); }
+.watch-row:hover { background:rgba(255,255,255,.03); }
+.watch-copy { min-width:0; }
+.watch-copy strong { display:block; font-size:14px; }
+.watch-copy code { display:block; margin-top:2px; color:var(--cyan); font-size:12px;
+  direction:ltr; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.watch-copy input { margin-top:6px; }
+.watch-copy input:first-child { margin-top:0; }
+.watch-status { color:var(--muted); font-size:12px; min-width:5.5rem; text-align:end; white-space:nowrap; }
+.icon-actions { display:flex; gap:6px; }
+.icon-btn { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center;
+  padding:0; border-radius:6px; border:1px solid var(--line); background:var(--panel2);
+  color:var(--muted); cursor:pointer; }
+.icon-btn svg { width:16px; height:16px; display:block; }
+.icon-btn:hover { color:var(--text); border-color:var(--cyan); }
+.icon-btn.danger:hover { color:var(--coral); border-color:var(--coral); }
 .path-row code { display:block; color:var(--cyan); font-size:12px; margin-top:3px; direction:ltr; text-align:left; }
 input[type=text], input[type=number] {
   width:100%; padding:9px 10px; border-radius:6px; border:1px solid var(--line);
@@ -98,8 +115,16 @@ input[type=text], input[type=number] {
 .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
   align-items:center; justify-content:center; z-index:20; padding:20px; }
 .modal.open { display:flex; }
-.modal .box { width:min(720px,100%); max-height:85vh; overflow:auto; background:var(--panel);
-  border:1px solid var(--line); border-radius:10px; padding:16px; }
+.modal .box { width:min(720px,100%); max-height:85vh; overflow:hidden; background:var(--panel);
+  border:1px solid var(--line); border-radius:10px; padding:0; display:flex; flex-direction:column; }
+.modal-bar { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:14px 16px; border-bottom:1px solid var(--line); flex:none; }
+.modal-bar h2 { margin:0; font-size:16px; min-width:0; }
+.modal-actions { display:flex; align-items:center; gap:8px; flex:none; }
+.modal-actions .btn { padding:7px 10px; white-space:nowrap; }
+.modal-status { margin:0; padding:8px 16px 0; }
+.modal-status:empty { display:none; }
+.modal-body { overflow:auto; padding:16px; min-height:0; }
 .modal pre { white-space:pre-wrap; background:var(--panel2); padding:10px; border-radius:6px;
   direction:ltr; text-align:left; font-size:12px; }
 .kb-item { border:1px solid var(--line); border-radius:8px; padding:10px; margin:8px 0; }
@@ -120,8 +145,6 @@ input[type=text], input[type=number] {
       </div>
     </div>
     <div class="header-actions">
-      <button class="lang-btn" id="btn-he" type="button">עברית</button>
-      <button class="lang-btn" id="btn-en" type="button">English</button>
       <span class="ver" id="version"></span>
     </div>
   </div>
@@ -209,12 +232,6 @@ input[type=text], input[type=number] {
     <section class="panel tabpane hidden" id="pane-settings">
       <h2 id="settings-title"></h2>
       <div class="grid" style="margin-top:12px">
-        <label><span id="lbl-settings-lang"></span>
-          <select id="settings-lang" style="width:100%;padding:9px;border-radius:6px;background:#222633;color:#fff;border:1px solid #2e3344">
-            <option value="he">עברית</option>
-            <option value="en">English</option>
-          </select>
-        </label>
         <label><span id="lbl-settings-interval"></span><input type="number" id="settings-interval" min="15" step="15"></label>
         <label style="grid-column:1/-1"><span id="lbl-settings-reader"></span><input type="text" id="settings-reader"></label>
         <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center">
@@ -240,23 +257,28 @@ input[type=text], input[type=number] {
 
   <div class="modal" id="modal">
     <div class="box">
-      <h2 id="detail-title"></h2>
-      <p><strong id="built-in-lbl"></strong></p>
-      <pre id="detail-builtin"></pre>
-      <p><strong id="kb-matches-lbl"></strong></p>
-      <div id="detail-kb"></div>
-      <button class="btn" id="btn-detail-online" type="button" style="margin-top:10px"></button>
-      <p class="hint" id="detail-online-status"></p>
-      <button class="btn" id="btn-close" type="button" style="margin-top:10px"></button>
+      <div class="modal-bar">
+        <h2 id="detail-title"></h2>
+        <div class="modal-actions">
+          <button class="btn" id="btn-detail-online" type="button"></button>
+          <button class="icon-btn" id="btn-close" type="button" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
+        </div>
+      </div>
+      <p class="hint modal-status" id="detail-online-status"></p>
+      <div class="modal-body">
+        <p><strong id="built-in-lbl"></strong></p>
+        <pre id="detail-builtin"></pre>
+        <p><strong id="kb-matches-lbl"></strong></p>
+        <div id="detail-kb"></div>
+      </div>
     </div>
   </div>
 
 <script>
 const LEVELS = ["FATAL","ERROR","WARNING","DEBUG","INFO"];
-const state = { lang:"he", strings:{}, snap:null, filters:new Set(LEVELS), tab:"live", alerts:{} };
+const state = { lang:"en", strings:{}, snap:null, filters:new Set(LEVELS), tab:"live", alerts:{} };
 const $ = (id) => document.getElementById(id);
 const brand = $("brand"), subtitle = $("subtitle"), version = $("version");
-const btnHe = $("btn-he"), btnEn = $("btn-en");
 const nFatal = $("n-fatal"), nError = $("n-error"), nWarn = $("n-warn");
 const nDebug = $("n-debug"), nInfo = $("n-info"), detNote = $("det-note");
 const statusBar = $("status-bar"), statusText = $("status-text"), monitorBtn = $("monitor-btn");
@@ -269,6 +291,7 @@ const th2Msg = $("th2-msg"), th2Sug = $("th2-sug"), th2Kb = $("th2-kb");
 const detailHint = $("detail-hint"), liveBody = $("live-body");
 const historyTitle = $("history-title"), historyBody = $("history-body"), historyEmpty = $("history-empty");
 const watchTitle = $("watch-title"), watchHelp = $("watch-help"), targets = $("targets");
+let watchDirty = false;
 const lblInterval = $("lbl-interval"), lblExtra = $("lbl-extra");
 const interval = $("interval"), extra = $("extra");
 const btnSave = $("btn-save"), btnScan = $("btn-scan");
@@ -276,10 +299,10 @@ const kbTitle = $("kb-title"), lblDb = $("lbl-db"), dbPath = $("db-path");
 const btnOpenReader = $("btn-open-reader"), kbQuery = $("kb-query"), kbResults = $("kb-results");
 const onlineTitle = $("online-title"), onlineHelp = $("online-help");
 const onlineSources = $("online-sources"), btnOnline = $("btn-online"), onlineStatus = $("online-status");
-const settingsTitle = $("settings-title"), lblSettingsLang = $("lbl-settings-lang");
+const settingsTitle = $("settings-title");
 const lblSettingsInterval = $("lbl-settings-interval"), lblSettingsReader = $("lbl-settings-reader");
 const lblSettingsOnline = $("lbl-settings-online"), onlineSettingsHint = $("online-settings-hint");
-const settingsLang = $("settings-lang"), settingsInterval = $("settings-interval");
+const settingsInterval = $("settings-interval");
 const settingsReader = $("settings-reader"), settingsOnline = $("settings-online");
 const btnSettingsSave = $("btn-settings-save");
 const emailTitle = $("email-title"), emailStub = $("email-stub");
@@ -297,15 +320,12 @@ function S(key, vars) {
 }
 
 function applyI18n() {
-  const rtl = state.lang === "he";
-  document.documentElement.lang = state.lang;
-  document.documentElement.dir = rtl ? "rtl" : "ltr";
+  document.documentElement.lang = "en";
+  document.documentElement.dir = "ltr";
   document.title = S("app_title");
   brand.textContent = S("brand");
   subtitle.textContent = S("subtitle");
   version.textContent = S("version");
-  btnHe.classList.toggle("active", state.lang==="he");
-  btnEn.classList.toggle("active", state.lang==="en");
   ["fatal","error","warning","debug","info"].forEach(k => {
     document.getElementById("lbl-"+k).textContent = S(k);
   });
@@ -335,7 +355,6 @@ function applyI18n() {
   onlineHelp.textContent = S("online_help");
   btnOnline.textContent = S("online_search_btn");
   settingsTitle.textContent = S("settings_title");
-  lblSettingsLang.textContent = S("settings_lang");
   lblSettingsInterval.textContent = S("settings_interval");
   lblSettingsReader.textContent = S("settings_reader");
   lblSettingsOnline.textContent = S("settings_online");
@@ -349,7 +368,8 @@ function applyI18n() {
   detailTitle.textContent = S("detail_title");
   builtInLbl.textContent = S("built_in");
   kbMatchesLbl.textContent = S("kb_matches");
-  btnClose.textContent = S("close");
+  btnClose.title = S("close");
+  btnClose.setAttribute("aria-label", S("close"));
   renderTabs();
   renderFilters();
   renderStatus();
@@ -380,7 +400,6 @@ function showTab() {
   if (state.tab === "system") renderSystem();
   if (state.tab === "kb") renderOnlineSources();
   if (state.tab === "settings" && state.snap) {
-    settingsLang.value = state.snap.language;
     settingsInterval.value = state.snap.interval_seconds;
     settingsReader.value = state.snap.reader_base;
     settingsOnline.checked = !!state.snap.online_search;
@@ -455,7 +474,9 @@ function renderStatus() {
   const total = Object.values(c).reduce((a,b)=>a+b,0);
   detNote.textContent = total ? S("detections_count", {n: total}) : S("no_detections");
   dbPath.textContent = state.snap.database || "";
-  interval.value = state.snap.interval_seconds || 60;
+  if (!watchDirty && document.activeElement !== interval) {
+    interval.value = state.snap.interval_seconds || 60;
+  }
 }
 
 function rowHtml(a) {
@@ -495,20 +516,131 @@ function renderHistory() {
   });
 }
 
+function watchRowsFromSnap() {
+  const builtin = (state.snap.targets || []).map(t => ({
+    id: t.id || "",
+    label: t.label || "",
+    path: t.path || "",
+    enabled: !!t.enabled,
+    status: t.status || ""
+  }));
+  const extras = (state.snap.extra_paths || []).map((e, index) => ({
+    id: "extra-" + (index + 1),
+    label: S("extra_path"),
+    path: e.path || "",
+    enabled: true,
+    status: e.status || ""
+  }));
+  return builtin.concat(extras);
+}
+
+const WATCH_ICONS = {
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>'
+};
+
+function iconButton(action, title, icon, danger) {
+  return `<button class="icon-btn${danger ? " danger" : ""}" type="button" data-action="${action}" title="${esc(title)}" aria-label="${esc(title)}">${icon}</button>`;
+}
+
+function collectWatchRows() {
+  return [...targets.querySelectorAll(".watch-row")].map(row => {
+    const labelInput = row.querySelector("[data-field=label]");
+    const pathInput = row.querySelector("[data-field=path]");
+    const label = (labelInput ? labelInput.value : (row.dataset.label || "")).trim();
+    const path = (pathInput ? pathInput.value : (row.dataset.path || "")).trim();
+    return {
+      id: row.dataset.id || "",
+      label: label || path,
+      path,
+      enabled: !!row.querySelector("[data-field=enabled]").checked
+    };
+  }).filter(row => row.path);
+}
+
+function watchViewHtml(t) {
+  return `
+    <div class="watch-row" data-id="${esc(t.id)}" data-label="${esc(t.label)}" data-path="${esc(t.path)}" data-status="${esc(t.status || "")}">
+      <input type="checkbox" data-field="enabled" ${t.enabled ? "checked" : ""}>
+      <div class="watch-copy"><strong>${esc(t.label)}</strong><code>${esc(t.path)}</code></div>
+      <span class="watch-status">${statusLabel(t.status)}</span>
+      <div class="icon-actions">
+        ${iconButton("edit", S("edit_path"), WATCH_ICONS.edit, false)}
+        ${iconButton("remove", S("remove_path"), WATCH_ICONS.trash, true)}
+      </div>
+    </div>`;
+}
+
+function bindWatchRow(row) {
+  const enabled = row.querySelector("[data-field=enabled]");
+  if (enabled) enabled.addEventListener("change", () => { watchDirty = true; });
+  const edit = row.querySelector("[data-action=edit]");
+  const remove = row.querySelector("[data-action=remove]");
+  if (edit) edit.onclick = () => beginWatchEdit(row);
+  if (remove) remove.onclick = async () => {
+    row.remove();
+    watchDirty = true;
+    await persistWatch();
+  };
+}
+
+function beginWatchEdit(row) {
+  watchDirty = true;
+  const enabled = row.querySelector("[data-field=enabled]").checked;
+  row.classList.add("editing");
+  row.innerHTML = `
+    <input type="checkbox" data-field="enabled" ${enabled ? "checked" : ""}>
+    <div class="watch-copy">
+      <input type="text" data-field="label" value="${esc(row.dataset.label || "")}" aria-label="${esc(S("path_name"))}">
+      <input type="text" data-field="path" value="${esc(row.dataset.path || "")}" aria-label="${esc(S("path_location"))}">
+    </div>
+    <span class="watch-status">${statusLabel(row.dataset.status || "")}</span>
+    <div class="icon-actions">
+      ${iconButton("ok", S("save"), WATCH_ICONS.check, false)}
+      ${iconButton("cancel", S("close"), WATCH_ICONS.cancel, false)}
+    </div>`;
+  row.querySelector("[data-field=path]").focus();
+  row.querySelector("[data-action=ok]").onclick = () => persistWatch();
+  row.querySelector("[data-action=cancel]").onclick = () => cancelWatchEdit(row);
+}
+
+function cancelWatchEdit(row) {
+  const model = {
+    id: row.dataset.id || "",
+    label: row.dataset.label || "",
+    path: row.dataset.path || "",
+    enabled: !!row.querySelector("[data-field=enabled]").checked,
+    status: row.dataset.status || ""
+  };
+  const fresh = document.createElement("div");
+  fresh.innerHTML = watchViewHtml(model);
+  const replacement = fresh.firstElementChild;
+  row.replaceWith(replacement);
+  bindWatchRow(replacement);
+  const editing = targets.querySelector(".watch-row.editing");
+  const snap = (state.snap && state.snap.targets) || [];
+  const toggled = [...targets.querySelectorAll(".watch-row")].some(item => {
+    const known = snap.find(t => t.id === item.dataset.id);
+    if (!known) return false;
+    return !!known.enabled !== !!item.querySelector("[data-field=enabled]").checked;
+  });
+  watchDirty = !!editing || toggled;
+}
+
 function renderTargets() {
-  if (!state.snap) return;
-  const pathStatusKey = {ok:"path_ok", missing:"path_missing", unc:"path_unc", pattern:"path_pattern", empty:"path_empty"};
-  targets.innerHTML = (state.snap.targets || []).map(t => `
-    <div class="path-row">
-      <input type="checkbox" data-id="${esc(t.id)}" ${t.enabled ? "checked" : ""}>
-      <div><strong>${esc(t.label)}</strong><code>${esc(t.path)}</code></div>
-      <span>${statusLabel(t.status)}</span>
-    </div>`).join("") + (state.snap.extra_paths||[]).map(e => `
-    <div class="path-row">
-      <input type="checkbox" checked disabled>
-      <div><strong>${S("extra_path")}</strong><code>${esc(e.path)}</code></div>
-      <span>${statusLabel(e.status)}</span>
-    </div>`).join("");
+  if (!state.snap || watchDirty) return;
+  targets.innerHTML = watchRowsFromSnap().map(watchViewHtml).join("");
+  targets.querySelectorAll(".watch-row").forEach(bindWatchRow);
+}
+
+async function persistWatch() {
+  const rows = collectWatchRows();
+  await window.pywebview.api.save_watch(rows, Number(interval.value || 60), extra.value || "");
+  extra.value = "";
+  watchDirty = false;
+  await refresh();
 }
 
 function renderSystem() {
@@ -538,7 +670,7 @@ function openDetail(alert) {
 async function refresh() {
   const snap = await window.pywebview.api.get_snapshot();
   state.snap = snap;
-  state.lang = snap.language || state.lang;
+  state.lang = "en";
   applyI18n();
   renderLive();
   if (state.tab === "history") renderHistory();
@@ -553,8 +685,6 @@ window.addEventListener("pywebviewready", async () => {
   setInterval(refresh, 2000);
 });
 
-btnHe.onclick = async () => { await window.pywebview.api.set_language("he"); await refresh(); };
-btnEn.onclick = async () => { await window.pywebview.api.set_language("en"); await refresh(); };
 monitorBtn.onclick = async () => {
   const running = !!(state.snap && state.snap.running);
   await window.pywebview.api.set_monitoring(!running);
@@ -562,16 +692,10 @@ monitorBtn.onclick = async () => {
 };
 btnClear.onclick = async () => { await window.pywebview.api.clear_alerts(); await refresh(); };
 btnSearch.onclick = () => { state.tab = "kb"; showTab(); kbQuery.focus(); };
-btnSave.onclick = async () => {
-  const ids = [...targets.querySelectorAll("input[type=checkbox][data-id]:checked")].map(el => el.dataset.id);
-  await window.pywebview.api.save_watch(ids, Number(interval.value||60), extra.value||"");
-  extra.value = "";
-  await refresh();
-};
+btnSave.onclick = () => persistWatch();
 btnScan.onclick = async () => { await window.pywebview.api.scan_now(); await refresh(); };
 btnOpenReader.onclick = async () => { await window.pywebview.api.open_reader(); };
 btnSettingsSave.onclick = async () => {
-  await window.pywebview.api.set_language(settingsLang.value);
   await window.pywebview.api.save_settings(
     Number(settingsInterval.value||60),
     settingsReader.value||"",
@@ -614,21 +738,20 @@ class GuardianApi:
         return self.app.set_language(normalize_lang(lang))
 
     def set_monitoring(self, enabled: bool) -> bool:
-        self.app.set_monitoring(bool(enabled))
+        self.app.set_monitoring(enabled)
         return bool(self.app.state.get("running"))
 
     def clear_alerts(self) -> str:
         self.app.clear_alerts()
         return t(self.app.language(), "cleared")
 
-    def save_watch(self, enabled_ids: list, interval: int, extra: str = "") -> str:
-        notice = self.app.update_watch_dirs(
-            enabled_ids=list(enabled_ids or []),
-            interval=int(interval or 60),
-            extra=extra or "",
-        )
-        key = "extra_added" if notice == "extra_added" else "saved"
-        return t(self.app.language(), key)
+    def save_watch(self, rows: list, interval: int, extra: str = "") -> str:
+        items = [dict(item) for item in (rows or []) if isinstance(item, dict)]
+        added = (extra or "").strip()
+        if added:
+            items.append({"id": "", "label": "Extra path", "path": added, "enabled": True})
+        self.app.set_watch_targets(items, int(interval or 60))
+        return t(self.app.language(), "extra_added" if added else "saved")
 
     def save_settings(self, interval: int, reader_base: str = "", online_search: bool = False) -> str:
         enabled = [item["id"] for item in self.app.state["targets"] if item.get("enabled")]

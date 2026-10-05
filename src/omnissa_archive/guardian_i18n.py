@@ -1,9 +1,9 @@
-"""Hebrew / English UI strings for Omnissa Guardian desktop."""
+﻿"""English UI strings for Omnissa Guardian desktop."""
 
 from __future__ import annotations
 
-SUPPORTED = ("he", "en")
-DEFAULT_LANG = "he"
+SUPPORTED = ("en",)
+DEFAULT_LANG = "en"
 
 STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -11,8 +11,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "brand": "OMNISSA GUARDIAN ULTIMATE",
         "subtitle": "Proactive VDI Log Monitoring & Troubleshooting",
         "version": "v2.0.0",
-        "lang_he": "עברית",
-        "lang_en": "English",
         "fatal": "FATAL",
         "error": "ERROR",
         "warning": "WARNING",
@@ -20,9 +18,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "info": "INFO",
         "no_detections": "No detections yet.",
         "detections_count": "{n} detections",
-        "status_stopped": "STOPPED – configure directories then click Start Monitoring",
-        "status_running": "RUNNING – scanning log directories every {sec}s",
-        "status_paused": "PAUSED – monitoring is paused",
+        "status_stopped": "STOPPED - configure directories then click Start Monitoring",
+        "status_running": "RUNNING - scanning log directories every {sec}s",
+        "status_paused": "PAUSED - monitoring is paused",
         "start_monitoring": "START MONITORING",
         "stop_monitoring": "STOP MONITORING",
         "tab_live": "Live Monitor",
@@ -42,13 +40,17 @@ STRINGS: dict[str, dict[str, str]] = {
         "col_message": "Message",
         "col_suggestion": "Suggestion",
         "col_kb": "KB",
-        "detail_hint": "DETAIL (double-click a row) – shows built-in suggestion + top offline KB matches.",
+        "detail_hint": "DETAIL (double-click a row) â€“ shows built-in suggestion + top offline KB matches.",
         "open_archive": "Open in Archive",
         "no_match": "No strong archive match",
         "no_match_hint": "Search the offline archive manually.",
         "watch_title": "Watch directories",
-        "watch_help": "Defaults from KB 1027744. Add a local path or UNC share.",
+        "watch_help": "Use the pencil to edit a path and the trash icon to remove it, including paths that come with the program.",
+        "edit_path": "Edit",
         "extra_path": "Extra path / UNC",
+        "path_name": "Name",
+        "path_location": "Path",
+        "remove_path": "Remove",
         "add_path": "Add path",
         "path_status": "Status",
         "enabled": "Enabled",
@@ -58,7 +60,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "kb_title": "KB / Archive source",
         "kb_db": "Active database",
         "kb_open_reader": "Open Archive Reader",
-        "kb_search_placeholder": "Search archive…",
+        "kb_search_placeholder": "Search archiveâ€¦",
         "online_title": "Online documents",
         "online_help": "Shown here, and used only when the setting is on and the network can reach the public KB.",
         "online_search_btn": "Search online",
@@ -67,7 +69,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "online_empty": "Enter a search phrase first.",
         "online_opened": "Opened {n} online searches.",
         "settings_title": "Settings",
-        "settings_lang": "Interface language",
         "settings_interval": "Default scan interval",
         "settings_reader": "Archive reader URL",
         "settings_online": "Search online documents",
@@ -88,111 +89,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "path_pattern": "Pattern",
         "path_empty": "Empty",
         "saved": "Settings saved",
-        "scan_done": "Scan finished · {n} new detections",
+        "scan_done": "Scan finished Â· {n} new detections",
         "cleared": "Detections cleared",
         "extra_added": "Path added",
-    },
-    "he": {
-        "app_title": "Omnissa Guardian Ultimate",
-        "brand": "OMNISSA GUARDIAN ULTIMATE",
-        "subtitle": "ניטור לוגים יזום ופתרון תקלות VDI",
-        "version": "v2.0.0",
-        "lang_he": "עברית",
-        "lang_en": "English",
-        "fatal": "FATAL",
-        "error": "ERROR",
-        "warning": "WARNING",
-        "debug": "DEBUG",
-        "info": "INFO",
-        "no_detections": "אין זיהויים עדיין.",
-        "detections_count": "{n} זיהויים",
-        "status_stopped": "עצור – הגדירו תיקיות ואז לחצו על התחלת ניטור",
-        "status_running": "פועל – סורק תיקיות לוג כל {sec} שניות",
-        "status_paused": "מושהה – הניטור מושהה",
-        "start_monitoring": "התחלת ניטור",
-        "stop_monitoring": "עצירת ניטור",
-        "tab_live": "ניטור חי",
-        "tab_history": "היסטוריה",
-        "tab_watch": "תיקיות מעקב",
-        "tab_kb": "מקורות KB",
-        "tab_settings": "הגדרות",
-        "tab_email": "דוא״ל",
-        "tab_system": "יומן מערכת",
-        "realtime": "זיהויים בזמן אמת",
-        "filter": "סינון:",
-        "clear": "ניקוי",
-        "search_kb": "חיפוש ב־KB",
-        "col_timestamp": "זמן",
-        "col_level": "רמה",
-        "col_logfile": "קובץ לוג",
-        "col_message": "הודעה",
-        "col_suggestion": "הצעה",
-        "col_kb": "KB",
-        "detail_hint": "פירוט (לחיצה כפולה על שורה) – הצעה מובנית + התאמות KB אופליין.",
-        "open_archive": "פתח בארכיון",
-        "no_match": "לא נמצאה התאמה חזקה",
-        "no_match_hint": "אפשר לחפש ידנית בארכיון האופליין.",
-        "watch_title": "תיקיות מעקב",
-        "watch_help": "ברירות מחדל לפי KB 1027744. אפשר להוסיף נתיב מקומי או UNC.",
-        "extra_path": "נתיב נוסף / UNC",
-        "add_path": "הוספת נתיב",
-        "path_status": "סטטוס",
-        "enabled": "פעיל",
-        "interval": "מרווח סריקה (שניות)",
-        "save": "שמירה",
-        "scan_now": "סריקה עכשיו",
-        "kb_title": "מקור KB / ארכיון",
-        "kb_db": "מסד פעיל",
-        "kb_open_reader": "פתיחת קורא הארכיון",
-        "kb_search_placeholder": "חיפוש בארכיון…",
-        "online_title": "מסמכים אונליין",
-        "online_help": "האזור נשאר כאן. החיפוש בו רץ רק אם מסמנים אותו בהגדרות, ורק כשהרשת מגיעה ל־KB הציבורי.",
-        "online_search_btn": "חיפוש אונליין",
-        "online_disabled": "חיפוש אונליין כבוי. אפשר להפעיל בהגדרות.",
-        "online_offline": "אין רשת אל ה־KB הציבורי. נשארים על הארכיון המקומי.",
-        "online_empty": "קודם מזינים מילת חיפוש.",
-        "online_opened": "נפתחו {n} חיפושים אונליין.",
-        "settings_title": "הגדרות",
-        "settings_lang": "שפת ממשק",
-        "settings_interval": "מרווח סריקה ברירת מחדל",
-        "settings_reader": "כתובת קורא הארכיון",
-        "settings_online": "חיפוש במסמכים אונליין",
-        "settings_online_hint": "כבוי כברירת מחדל. סריקת לוג לא פותחת את האתרים האלה. חיפוש משתמש בהם רק כשהאפשרות מסומנת והרשת מאפשרת.",
-        "email_title": "התראות בדוא״ל",
-        "email_stub": "שליחת דוא״ל אינה מופעלת בגרסה זו. הזיהויים נשארים במחשב זה.",
-        "system_title": "יומן מערכת",
-        "system_empty": "אין הודעות מערכת עדיין.",
-        "history_title": "היסטוריית זיהויים",
-        "history_empty": "ההיסטוריה ריקה.",
-        "detail_title": "פירוט זיהוי",
-        "built_in": "הצעה מובנית",
-        "kb_matches": "התאמות KB אופליין",
-        "close": "סגור",
-        "path_ok": "נגיש",
-        "path_missing": "חסר",
-        "path_unc": "UNC",
-        "path_pattern": "תבנית",
-        "path_empty": "ריק",
-        "saved": "ההגדרות נשמרו",
-        "scan_done": "הסריקה הסתיימה · {n} זיהויים חדשים",
-        "cleared": "הזיהויים נוקו",
-        "extra_added": "הנתיב נוסף",
     },
 }
 
 
 def normalize_lang(lang: str | None) -> str:
-    value = (lang or DEFAULT_LANG).strip().lower()
-    if value.startswith("he"):
-        return "he"
-    if value.startswith("en"):
-        return "en"
-    return DEFAULT_LANG
+    return "en"
 
 
 def t(lang: str, key: str, **kwargs: object) -> str:
-    code = normalize_lang(lang)
-    template = STRINGS[code].get(key) or STRINGS["en"].get(key) or key
+    template = STRINGS["en"].get(key) or key
     if kwargs:
         try:
             return template.format(**kwargs)
@@ -200,12 +109,3 @@ def t(lang: str, key: str, **kwargs: object) -> str:
             return template
     return template
 
-
-def missing_keys() -> dict[str, list[str]]:
-    """Return keys present in one language but not the other."""
-    he = set(STRINGS["he"])
-    en = set(STRINGS["en"])
-    return {
-        "missing_in_he": sorted(en - he),
-        "missing_in_en": sorted(he - en),
-    }

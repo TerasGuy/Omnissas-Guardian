@@ -162,9 +162,9 @@ def test_catalog_filters_by_product_version_and_date(tmp_path: Path):
     ).decode("utf-8")
     assert "Notification" in page
     assert "Old ports" not in page
-    assert "מתאריך" in page
-    assert "גרסה" in page
-    assert "<th>תאריך</th><th>מספר KB</th><th>נושא</th><th>קטגוריה</th>" in page
+    assert "From" in page
+    assert "Version" in page
+    assert "<th>Date</th><th>KB number</th><th>Subject</th><th>Category</th>" in page
     assert "2024-03-29" in page
     assert "App Volumes" in page
 
@@ -205,12 +205,12 @@ def test_catalog_shows_kb_article_id_only_for_kb_rows(tmp_path: Path):
     conn.close()
 
     kb_page = reader.catalog_page("kb", {}, 1).decode("utf-8")
-    assert "<th>מספר KB</th>" in kb_page
+    assert "<th>KB number</th>" in kb_page
     assert ">1027744<" in kb_page
     assert "Log locations" in kb_page
 
     docs_page = reader.catalog_page("docs", {}, 1).decode("utf-8")
-    assert "<th>מספר KB</th>" in docs_page
+    assert "<th>KB number</th>" in docs_page
     assert "1027744" not in docs_page
     assert '<td class="kbnum">—</td>' in docs_page
     assert "Compatibility matrix" in docs_page

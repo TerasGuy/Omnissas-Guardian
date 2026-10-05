@@ -121,6 +121,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS documents_source_published ON documents(source, published_at)"
     )
+    # Covering index so the catalog filters do not read the article body.
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS documents_source_facets
+        ON documents(source, product_family, product, version, category)
+        """
+    )
     conn.commit()
 
 

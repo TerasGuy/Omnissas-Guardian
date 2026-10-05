@@ -41,9 +41,9 @@ def has_documents_table(path: Path) -> bool:
 
 def validate_database(path: Path) -> Path:
     if not is_sqlite_database(path):
-        raise ValueError("הקובץ אינו מסד SQLite")
+        raise ValueError("The file is not a SQLite database")
     if not has_documents_table(path):
-        raise ValueError("במסד אין טבלת documents")
+        raise ValueError("The database has no documents table")
     return path
 
 
@@ -132,7 +132,7 @@ class LibraryWatcher:
         if inbox is not None and (self._path is None or inbox.resolve() != current.resolve()):
             target = self._promote_inbox(inbox)
             self.bind(target)
-            notice = f"נטען מסד חדש מהתיבה: {target.name}"
+            notice = f"Loaded a new database from the inbox: {target.name}"
             self.last_reload_notice = notice
             self.last_reload_at = utcnow()
             return ReloadEvent(target, notice)
@@ -148,7 +148,7 @@ class LibraryWatcher:
             return None
         if stamp != self._stamp:
             self._stamp = stamp
-            notice = f"המסד עודכן בלי ריסטארט: {current.name}"
+            notice = f"Database updated without a restart: {current.name}"
             self.last_reload_notice = notice
             self.last_reload_at = utcnow()
             return ReloadEvent(current, notice)
@@ -172,7 +172,7 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 def install_uploaded_database(data_dir: Path, filename: str, payload: bytes) -> Path:
     if not payload.startswith(SQLITE_HEADER):
-        raise ValueError("הקובץ אינו מסד SQLite")
+        raise ValueError("The file is not a SQLite database")
     stem = _SAFE_NAME.sub("_", Path(filename or "archive.sqlite").name) or "archive.sqlite"
     if not stem.lower().endswith((".sqlite", ".db")):
         stem += ".sqlite"
@@ -224,17 +224,17 @@ def prepare_customer_package(source_data: Path, output_dir: Path) -> Path:
         ")\r\n",
         encoding="utf-8",
     )
-    readme = package / "README-he.txt"
+    readme = package / "README.txt"
     readme.write_text(
-        "חבילת ארכיון Omnissa ללקוח\r\n"
-        "========================\r\n"
-        "הפצה ללקוח היא קובץ ההתקנה OmnissaGuardianSetup.exe.\r\n"
-        "התיקייה הזו היא עותק פנימי של המסד והתמונות.\r\n"
-        "1. הארכיון נפתח בכתובת http://127.0.0.1:8765/ יחד עם חלון Guardian.\r\n"
-        "2. לעדכון חודשי או רבעוני: העתיקו archive.sqlite חדש אל data\\library\\inbox\\\r\n"
-        "   אחרי התקנה, או אל library\\inbox\\ בחבילה הזו.\r\n"
-        "   המסד נטען בלי ריסטארט.\r\n"
-        "3. תמונות נשמרות בתיקיית assets. בלי התיקייה המאמר נפתח והתמונות חסרות.\r\n",
+        "Omnissa archive package\r\n"
+        "=======================\r\n"
+        "Customers receive OmnissaGuardianSetup.exe.\r\n"
+        "This folder is an internal copy of the database and images.\r\n"
+        "1. The archive opens at http://127.0.0.1:8765/ together with the Guardian window.\r\n"
+        "2. For a monthly update, copy a new archive.sqlite into data\\library\\inbox\\\r\n"
+        "   after installation, or into library\\inbox\\ in this package.\r\n"
+        "   The database loads without a restart.\r\n"
+        "3. Images live in the assets folder. Without that folder the article opens and the images are missing.\r\n",
         encoding="utf-8",
     )
     return package
